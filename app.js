@@ -30,7 +30,7 @@ const TRACK_TIMINGS = {
 function createMockDb() {
   if (!localStorage.getItem('mock_users')) {
     const defaultUsers = [
-      { id: "admin-1", email: "admin@.com", name: "Administrador Principal", role: "admin", is_active: true, password: "1234" },
+      { id: "admin-1", email: "alejandrocodel.com", name: "Administrador Principal", role: "admin", is_active: true, password: "1234" },
       { id: "viewer-1", email: "piloto1@pitguide.com", name: "Marc Gené Jr", role: "viewer", is_active: true, password: "123" }
     ];
     localStorage.setItem('mock_users', JSON.stringify(defaultUsers));
@@ -38,6 +38,19 @@ function createMockDb() {
 
   const getUsers = () => JSON.parse(localStorage.getItem('mock_users'));
   const setUsers = (users) => localStorage.setItem('mock_users', JSON.stringify(users));
+
+  // Migración automática para actualizar el correo del admin en el localStorage del usuario
+  try {
+    const users = getUsers();
+    const adminUser = users.find(u => u.id === "admin-1");
+    if (adminUser && adminUser.email !== "alejandrocodel.com") {
+      adminUser.email = "alejandrocodel.com";
+      adminUser.password = "1234";
+      setUsers(users);
+    }
+  } catch (e) {
+    console.error("Error al migrar usuario admin:", e);
+  }
 
   return {
     isMock: true,
@@ -50,7 +63,7 @@ function createMockDb() {
         }
         const name = options?.data?.name || "Usuario";
         // Si el correo es el admin, entra activo; si no, inactivo esperando aprobación
-        const isAdminEmail = email.toLowerCase() === "admin@.com";
+        const isAdminEmail = email.toLowerCase() === "alejandrocodel.com";
         const role = isAdminEmail ? "admin" : "viewer";
         const is_active = isAdminEmail ? true : false;
         
@@ -1005,7 +1018,7 @@ function App() {
     } else {
       // Si estamos en Supabase real y el perfil no existe, crearlo automáticamente
       if (isSupabaseConfigured && session?.user) {
-        const isUserAdmin = session.user.email.toLowerCase() === "admin@.com";
+        const isUserAdmin = session.user.email.toLowerCase() === "alejandrocodel.com";
         const newProfile = {
           id: uid,
           name: session.user.user_metadata?.name || session.user.email.split('@')[0],
@@ -1104,7 +1117,7 @@ function App() {
       if (error) {
         setAuthError(error.message);
       } else {
-        alert("Cuenta creada con éxito. " + (authEmail.toLowerCase() === 'admin@.com' ? "Inicia sesión ahora." : "Espera a que el Administrador te autorice el acceso."));
+        alert("Cuenta creada con éxito. " + (authEmail.toLowerCase() === 'alejandrocodel.com' ? "Inicia sesión ahora." : "Espera a que el Administrador te autorice el acceso."));
         setAuthView('login');
       }
     }
