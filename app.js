@@ -19,6 +19,12 @@ const TIER_RANGES = {
   'Lento': { min: 50000, max: 54000 }
 };
 
+// Mapeo de Circuitos a sus enlaces de Apex Live Timing correspondientes
+const TRACK_TIMINGS = {
+  "Lucas Guerrero": "https://live.apex-timing.com/kartodromo-lucas-guerrero/"
+  // En el futuro se pueden añadir más circuitos aquí
+};
+
 // 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con encolamiento y persistencia)
 class ApexService {
   constructor() {
@@ -78,6 +84,11 @@ class ApexService {
         { tier: "Medio" }
       ]
     };
+  }
+
+  // Obtiene el enlace de live timing correspondiente al circuito cargado
+  getTrackTimingUrl() {
+    return TRACK_TIMINGS[this.session.trackName] || "https://live.apex-timing.com/kartodromo-lucas-guerrero/";
   }
 
   // Guarda la configuración y estado actual en LocalStorage de forma persistente
@@ -550,7 +561,7 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart }) {
   `;
 }
 
-// 6. Componente App principal (Orquesta modales globales de Circuito y Carril)
+// 6. Componente App principal (Orquesta el menú de pestañas Boxes / Live Timing e incrusta el iframe)
 function App() {
   const [liveData, setLiveData] = useState({
     session: { trackName: 'Lucas Guerrero', timeRemaining: 0, status: 'GREEN' },
@@ -564,6 +575,9 @@ function App() {
   const [showTrackModal, setShowTrackModal] = useState(false);
   const [showLaneModal, setShowLaneModal] = useState(false);
   const [modalTier, setModalTier] = useState("Rápido");
+  
+  // Pestaña activa ('boxes' para los carriles o 'timing' para el Live Timing embebido)
+  const [activeTab, setActiveTab] = useState('boxes');
 
   useEffect(() => {
     const unsubscribe = apexService.subscribe((newData) => {
@@ -583,23 +597,64 @@ function App() {
     setSelectedKart(null);
   };
 
+  // Obtiene el enlace actual de Apex Timing del circuito cargado
+  const activeTimingUrl = apexService.getTrackTimingUrl();
+
   return html`
     <div class="h-full w-full flex flex-col justify-between bg-black overflow-hidden select-none">
+      
+      <!-- Cabecera -->
       <${Navigation} 
         trackName=${liveData.session.trackName} 
         onTrackClick=${() => setShowTrackModal(true)} 
       />
+
+      <!-- Segmented Control de Pestañas (Boxes / Live Timing) -->
+      <div class="px-4 py-2 bg-[#0E0E10] border-b border-[#111111]/80 flex space-x-2 flex-shrink-0">
+        <button 
+          type="button"
+          onClick=${() => setActiveTab('boxes')}
+          class="flex-1 py-2 text-center text-xs font-bold rounded-lg transition-all active:scale-[0.98]
+            ${activeTab === 'boxes' ? 'bg-[#B026FF] text-white shadow-md' : 'bg-[#000000] text-gray-500 border border-gray-900/50 hover:text-gray-300'}"
+        >
+          Carril de Boxes
+        </button>
+        <button 
+          type="button"
+          onClick=${() => setActiveTab('timing')}
+          class="flex-1 py-2 text-center text-xs font-bold rounded-lg transition-all active:scale-[0.98]
+            ${activeTab === 'timing' ? 'bg-[#B026FF] text-white shadow-md' : 'bg-[#000000] text-gray-500 border border-gray-900/50 hover:text-gray-300'}"
+        >
+          Tiempos en Vivo
+        </button>
+      </div>
       
+      <!-- Contenedor Principal Adaptativo -->
       <main class="flex-1 overflow-hidden flex flex-col bg-black relative">
-        <${PitLanes} 
-          data=${liveData} 
-          onAddClick=${handleAddClick} 
-          selectedKart=${selectedKart}
-          setSelectedKart=${setSelectedKart}
-        />
+        ${activeTab === 'boxes' 
+          ? html`
+              <${PitLanes} 
+                data=${liveData} 
+                onAddClick=${handleAddClick} 
+                selectedKart=${selectedKart}
+                setSelectedKart=${setSelectedKart}
+              />
+            `
+          : html`
+              <div class="flex-1 w-full h-full bg-black relative">
+                <!-- Iframe del Live Timing de Apex del circuito elegido -->
+                <iframe 
+                  src="${activeTimingUrl}" 
+                  class="w-full h-full border-0 bg-black" 
+                  allow="fullscreen"
+                  title="Live Timing"
+                ></iframe>
+              </div>
+            `
+        }
       </main>
 
-      <!-- MODAL SELECTOR DE CIRCUITO (Sólo Lucas Guerrero) -->
+      <!-- MODAL SELECTOR DE CIRCUITO -->
       ${showTrackModal && html`
         <div class="fixed inset-0 bg-black/85 flex items-center justify-center p-6 z-50 backdrop-blur-sm">
           <div class="w-full max-w-xs bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl">
