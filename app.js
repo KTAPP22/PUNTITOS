@@ -65,7 +65,8 @@ function createMockDb() {
         // Si el correo es el admin, entra activo; si no, inactivo esperando aprobación
         const isAdminEmail = email.toLowerCase() === "alejandrocodel@gmail.com";
         const role = isAdminEmail ? "admin" : "viewer";
-        const is_active = isAdminEmail ? true : false;
+        // Los nuevos usuarios registrados entran activos directamente (is_active = true) pero sin modo admin (role = viewer)
+        const is_active = true;
         
         const newUser = { id: 'u-' + Date.now(), email, password, name, role, is_active };
         users.push(newUser);
@@ -448,8 +449,7 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
   };
 
   const handleSlotClick = (lane, slotIndex, kartObj) => {
-    // Tanto admins como espectadores pueden clickar karts ahora (para que la app funcione normalmente)
-    // Pero solo los administradores o usuarios normales de forma completa
+    if (!isAdmin) return; // Espectadores no pueden clickar/editar
     if (kartObj) {
       setSelectedKart({ lane, slotIndex, tier: kartObj.tier });
     }
@@ -537,23 +537,27 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
         <div class="flex flex-col items-center">
           <span class="text-[9px] font-extrabold text-gray-500 uppercase tracking-widest mb-1.5">Filas (Carriles)</span>
           <div class="flex items-center space-x-2">
-            <button 
-              type="button" 
-              onClick=${() => adjustLanes(-1)} 
-              disabled=${numLanes <= 1}
-              class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonRed disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
-            >
-              -
-            </button>
+            ${isAdmin ? html`
+              <button 
+                type="button" 
+                onClick=${() => adjustLanes(-1)} 
+                disabled=${numLanes <= 1}
+                class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonRed disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
+              >
+                -
+              </button>
+            ` : null}
             <span class="text-base font-black font-mono w-4 text-center text-white">${numLanes}</span>
-            <button 
-              type="button" 
-              onClick=${() => adjustLanes(1)} 
-              disabled=${numLanes >= 6}
-              class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonGreen disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
-            >
-              +
-            </button>
+            ${isAdmin ? html`
+              <button 
+                type="button" 
+                onClick=${() => adjustLanes(1)} 
+                disabled=${numLanes >= 6}
+                class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonGreen disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
+              >
+                +
+              </button>
+            ` : null}
           </div>
         </div>
 
@@ -563,23 +567,27 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
         <div class="flex flex-col items-center">
           <span class="text-[9px] font-extrabold text-gray-500 uppercase tracking-widest mb-1.5">Karts / Fila</span>
           <div class="flex items-center space-x-2">
-            <button 
-              type="button" 
-              onClick=${() => adjustSlots(-1)} 
-              disabled=${numSlots <= 1}
-              class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonRed disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
-            >
-              -
-            </button>
+            ${isAdmin ? html`
+              <button 
+                type="button" 
+                onClick=${() => adjustSlots(-1)} 
+                disabled=${numSlots <= 1}
+                class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonRed disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
+              >
+                -
+              </button>
+            ` : null}
             <span class="text-base font-black font-mono w-4 text-center text-white">${numSlots}</span>
-            <button 
-              type="button" 
-              onClick=${() => adjustSlots(1)} 
-              disabled=${numSlots >= 8}
-              class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonGreen disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
-            >
-              +
-            </button>
+            ${isAdmin ? html`
+              <button 
+                type="button" 
+                onClick=${() => adjustSlots(1)} 
+                disabled=${numSlots >= 8}
+                class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonGreen disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
+              >
+                +
+              </button>
+            ` : null}
           </div>
         </div>
       </div>
@@ -608,17 +616,28 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
                     const styles = tierColors[kartObj.tier] || { bg: 'bg-gray-600', text: 'text-white font-mono' };
                     const displayNum = getDynamicKartNumber(laneKey, slotIdx);
                     
-                    return html`
-                      <button 
-                        type="button"
-                        onClick=${() => handleSlotClick(laneKey, slotIdx, kartObj)}
-                        class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-extrabold transition-all duration-200 transform hover:scale-105 active:scale-95 z-10
-                          ${styles.bg} ${styles.text} 
-                          ${isSelected ? 'ring-4 ring-white border border-black animate-pulse' : 'border border-transparent'}"
-                      >
-                        ${displayNum}
-                      </button>
-                    `;
+                    if (isAdmin) {
+                      return html`
+                        <button 
+                          type="button"
+                          onClick=${() => handleSlotClick(laneKey, slotIdx, kartObj)}
+                          class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-extrabold transition-all duration-200 transform hover:scale-105 active:scale-95 z-10
+                            ${styles.bg} ${styles.text} 
+                            ${isSelected ? 'ring-4 ring-white border border-black animate-pulse' : 'border border-transparent'}"
+                        >
+                          ${displayNum}
+                        </button>
+                      `;
+                    } else {
+                      return html`
+                        <div 
+                          class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-extrabold z-10 select-none
+                            ${styles.bg} ${styles.text} border border-transparent"
+                        >
+                          ${displayNum}
+                        </div>
+                      `;
+                    }
                   } else {
                     return html`
                       <div class="w-10 h-10 rounded-full border border-dashed border-gray-800/30 flex items-center justify-center text-gray-800 text-[10px] select-none">
@@ -638,40 +657,46 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
       <div class="h-4 flex-shrink-0"></div>
 
       <!-- PANEL: AGREGAR NUEVO KART -->
-      <div class="mb-4 mt-2 flex-shrink-0">
-        <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">AGREGAR NUEVO KART</span>
-        <div class="grid grid-cols-3 gap-2">
-          <button 
-            type="button"
-            onClick=${() => onAddClick('Rápido')}
-            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#39FF14]/30 bg-[#39FF14]/5 text-[#39FF14] hover:bg-[#39FF14]/15 text-xs font-bold transition-all active:scale-[0.98]"
-          >
-            <span class="w-2.5 h-2.5 rounded-full bg-[#39FF14]"></span>
-            <span>+ Rápido</span>
-          </button>
-          
-          <button 
-            type="button"
-            onClick=${() => onAddClick('Medio')}
-            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF8C00]/30 bg-[#FF8C00]/5 text-[#FF8C00] hover:bg-[#FF8C00]/15 text-xs font-bold transition-all active:scale-[0.98]"
-          >
-            <span class="w-2.5 h-2.5 rounded-full bg-[#FF8C00]"></span>
-            <span>+ Medio</span>
-          </button>
-          
-          <button 
-            type="button"
-            onClick=${() => onAddClick('Lento')}
-            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF3131]/30 bg-[#FF3131]/5 text-[#FF3131] hover:bg-[#FF3131]/15 text-xs font-bold transition-all active:scale-[0.98]"
-          >
-            <span class="w-2.5 h-2.5 rounded-full bg-[#FF3131]"></span>
-            <span>+ Lento</span>
-          </button>
+      ${isAdmin ? html`
+        <div class="mb-4 mt-2 flex-shrink-0">
+          <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">AGREGAR NUEVO KART</span>
+          <div class="grid grid-cols-3 gap-2">
+            <button 
+              type="button"
+              onClick=${() => onAddClick('Rápido')}
+              class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#39FF14]/30 bg-[#39FF14]/5 text-[#39FF14] hover:bg-[#39FF14]/15 text-xs font-bold transition-all active:scale-[0.98]"
+            >
+              <span class="w-2.5 h-2.5 rounded-full bg-[#39FF14]"></span>
+              <span>+ Rápido</span>
+            </button>
+            
+            <button 
+              type="button"
+              onClick=${() => onAddClick('Medio')}
+              class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF8C00]/30 bg-[#FF8C00]/5 text-[#FF8C00] hover:bg-[#FF8C00]/15 text-xs font-bold transition-all active:scale-[0.98]"
+            >
+              <span class="w-2.5 h-2.5 rounded-full bg-[#FF8C00]"></span>
+              <span>+ Medio</span>
+            </button>
+            
+            <button 
+              type="button"
+              onClick=${() => onAddClick('Lento')}
+              class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF3131]/30 bg-[#FF3131]/5 text-[#FF3131] hover:bg-[#FF3131]/15 text-xs font-bold transition-all active:scale-[0.98]"
+            >
+              <span class="w-2.5 h-2.5 rounded-full bg-[#FF3131]"></span>
+              <span>+ Lento</span>
+            </button>
+          </div>
         </div>
-      </div>
+      ` : html`
+        <div class="bg-[#0E0E10] border border-gray-900 rounded-xl p-3 text-center text-xs font-bold text-gray-500 flex-shrink-0 select-none">
+          👀 Modo Espectador (Solo Lectura)
+        </div>
+      `}
 
-      <!-- PANEL DE KART SELECCIONADO (Visible para cualquier usuario al hacer clic en un kart) -->
-      ${selectedKart && pitLanes[selectedKart.lane] && pitLanes[selectedKart.lane][selectedKart.slotIndex] ? html`
+      <!-- PANEL DE KART SELECCIONADO (Solo visible para Admin al hacer clic en un kart) -->
+      ${isAdmin && selectedKart && pitLanes[selectedKart.lane] && pitLanes[selectedKart.lane][selectedKart.slotIndex] ? html`
         <div class="bg-[#0E0E10] border border-gray-900 rounded-xl p-3.5 flex flex-col space-y-2.5 mb-2 flex-shrink-0 animate-fade-in">
           <div class="flex items-center justify-between">
             <span class="text-[9px] uppercase tracking-wider text-gray-500 font-extrabold">
@@ -726,11 +751,11 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
             🗑️ Eliminar Kart de la Fila
           </button>
         </div>
-      ` : html`
+      ` : isAdmin ? html`
         <div class="h-[80px] flex items-center justify-center border border-dashed border-gray-900/50 rounded-xl text-gray-700 text-[10px] font-bold flex-shrink-0 select-none">
           Haz clic en un kart para cambiar su velocidad o eliminarlo
         </div>
-      `}
+      ` : null}
 
     </div>
   `;
@@ -1023,7 +1048,7 @@ function App() {
           id: uid,
           name: session.user.user_metadata?.name || session.user.email.split('@')[0],
           role: isUserAdmin ? 'admin' : (session.user.user_metadata?.role || 'viewer'),
-          is_active: isUserAdmin ? true : false,
+          is_active: true, // Habilitado de forma automática
           updated_at: new Date().toISOString()
         };
         const { error: insertError } = await db.from('profiles').insert(newProfile);
