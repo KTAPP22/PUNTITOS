@@ -19,7 +19,7 @@ const TIER_RANGES = {
   'Lento': { min: 50000, max: 54000 }
 };
 
-// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con encolamiento automático)
+// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con encolamiento y numeración automática)
 class ApexService {
   constructor() {
     this.subscribers = new Set();
@@ -41,25 +41,23 @@ class ApexService {
       { id: "5", name: "M. Verstappen (Sim)", kart: "8", tier: "Medio", bestLap: 47890, lastLap: 48100, currentLapNum: 7, sector: 2, s1: 16100, s2: 16200, s3: 0, currentLapStart: Date.now() - 20000, speed: 70, gap: 2680, status: "TRACK" }
     ];
 
-    // Cantidad inicial de filas (Lanes) y karts por fila
     this.numLanes = 2;
     this.numSlots = 4;
-    
-    // Contador de enumeración automática para nuevos karts
-    this.nextKartNumber = 9; // Empezamos en 9 ya que del 1 al 8 representan pilotos precargados
 
+    // Inicializamos los karts. No guardamos un número de kart estático, 
+    // se calculará dinámicamente según su orden en el carril.
     this.pitLanes = {
       L1: [
-        { kart: "1", tier: "Rápido" },
-        { kart: "2", tier: "Medio" },
-        { kart: "3", tier: "Lento" },
-        { kart: "4", tier: "Rápido" }
+        { tier: "Rápido" },
+        { tier: "Medio" },
+        { tier: "Lento" },
+        { tier: "Rápido" }
       ],
       L2: [
-        { kart: "5", tier: "Medio" },
-        { kart: "6", tier: "Lento" },
-        { kart: "7", tier: "Medio" },
-        { kart: "8", tier: "Medio" }
+        { tier: "Medio" },
+        { tier: "Lento" },
+        { tier: "Medio" },
+        { tier: "Medio" }
       ]
     };
 
@@ -89,8 +87,8 @@ class ApexService {
   }
 
   setPitLaneLayout(numLanes, numSlots) {
-    this.numLanes = Math.max(1, Math.min(6, numLanes)); // Límite seguro para pantallas móviles (1-6)
-    this.numSlots = Math.max(1, Math.min(8, numSlots)); // Límite seguro para pantallas móviles (1-8)
+    this.numLanes = Math.max(1, Math.min(6, numLanes)); // Límite de 1 a 6 filas
+    this.numSlots = Math.max(1, Math.min(8, numSlots)); // Límite de 1 a 8 slots
     
     const newPitLanes = {};
     for (let i = 1; i <= this.numLanes; i++) {
@@ -107,44 +105,35 @@ class ApexService {
     this.emit();
   }
 
-  // Agrega un kart en el ÚLTIMO LUGAR (entrada, índice numSlots - 1) desplazando el resto un puesto adelante
+  // Agrega un kart al final de la fila (último lugar: índice numSlots - 1) desplazando el resto un puesto adelante
   pushKartToLane(lane, tier) {
     const laneData = this.pitLanes[lane];
     
-    // El kart que estaba primero en el carril (índice 0, salida) sale del carril
     // Desplazamos todos los karts una posición hacia adelante (hacia la salida, índice 0)
     for (let i = 0; i < this.numSlots - 1; i++) {
       laneData[i] = laneData[i + 1];
     }
     
-    // Creamos y asignamos el nuevo kart en el último lugar (entrada, índice numSlots - 1)
-    const kartNumber = String(this.nextKartNumber++);
-    laneData[this.numSlots - 1] = { kart: kartNumber, tier: tier };
+    // Insertamos el nuevo kart en el último lugar (entrada, índice numSlots - 1)
+    laneData[this.numSlots - 1] = { tier: tier };
     
     this.emit();
   }
 
-  updateKartTier(kartNumber, newTier) {
-    const driver = this.drivers.find(d => d.kart === kartNumber);
-    if (driver) driver.tier = newTier;
-    
-    for (let lane of Object.keys(this.pitLanes)) {
-      const idx = this.pitLanes[lane].findIndex(k => k && k.kart === kartNumber);
-      if (idx !== -1) {
-        this.pitLanes[lane][idx].tier = newTier;
-      }
+  // Modifica el tier de un kart por su carril y índice de ranura
+  updateKartTierAtSlot(lane, slotIndex, newTier) {
+    if (this.pitLanes[lane] && this.pitLanes[lane][slotIndex]) {
+      this.pitLanes[lane][slotIndex].tier = newTier;
+      this.emit();
     }
-    this.emit();
   }
 
-  removeKartFromPitLane(kartNumber) {
-    for (let lane of Object.keys(this.pitLanes)) {
-      const idx = this.pitLanes[lane].findIndex(k => k && k.kart === kartNumber);
-      if (idx !== -1) {
-        this.pitLanes[lane][idx] = null;
-      }
+  // Elimina un kart de una posición específica
+  removeKartAtSlot(lane, slotIndex) {
+    if (this.pitLanes[lane]) {
+      this.pitLanes[lane][slotIndex] = null;
+      this.emit();
     }
-    this.emit();
   }
 
   startSimulation() {
@@ -219,10 +208,10 @@ function Navigation() {
   `;
 }
 
-// 5. Componente PitLanes (Encolamiento automático al agregar y edición simplificada)
+// 5. Componente PitLanes (Enumeración del 1 al total de karts en cada carril)
 function PitLanes({ data }) {
   const { pitLanes, numLanes, numSlots } = data;
-  const [selectedKart, setSelectedKart] = useState(null);
+  const [selectedKart, setSelectedKart] = useState(null); // { lane, slotIndex, tier }
   const [showLaneModal, setShowLaneModal] = useState(false);
   const [modalTier, setModalTier] = useState("Rápido");
 
@@ -241,13 +230,34 @@ function PitLanes({ data }) {
     }
   };
 
+  // Función para obtener el número de kart dinámico (de 1 al total de karts en la fila)
+  // Cuenta cuántos karts existen desde el inicio (salida, índice 0) hasta el slotIdx actual
+  const getDynamicKartNumber = (laneKey, slotIdx) => {
+    const laneData = pitLanes[laneKey];
+    if (!laneData || laneData[slotIdx] === null) return 0;
+    
+    let count = 0;
+    for (let i = 0; i <= slotIdx; i++) {
+      if (laneData[i] !== null) {
+        count++;
+      }
+    }
+    return count;
+  };
+
+  // Obtiene el total de karts activos en una fila específica
+  const getTotalKartsInLane = (laneKey) => {
+    const laneData = pitLanes[laneKey];
+    if (!laneData) return 0;
+    return laneData.filter(slot => slot !== null).length;
+  };
+
   // Manejar el clic en un kart para seleccionarlo y poder editarlo
   const handleSlotClick = (lane, slotIndex, kartObj) => {
     if (kartObj) {
       setSelectedKart({
         lane,
         slotIndex,
-        kartNumber: kartObj.kart,
         tier: kartObj.tier
       });
     }
@@ -256,7 +266,7 @@ function PitLanes({ data }) {
   // Modifica el tier de un kart existente seleccionado
   const handleTierChange = (newTier) => {
     if (!selectedKart) return;
-    apexService.updateKartTier(selectedKart.kartNumber, newTier);
+    apexService.updateKartTierAtSlot(selectedKart.lane, selectedKart.slotIndex, newTier);
     setSelectedKart(prev => ({ ...prev, tier: newTier }));
   };
 
@@ -370,11 +380,12 @@ function PitLanes({ data }) {
       <div class="flex-1 flex justify-around items-center py-4 min-h-[220px] overflow-x-auto no-scrollbar gap-4">
         ${Object.keys(pitLanes).map(laneKey => {
           const laneData = pitLanes[laneKey];
+          const totalInLane = getTotalKartsInLane(laneKey);
           return html`
             <div class="flex flex-col items-center space-y-2 w-[76px] flex-shrink-0">
-              <span class="text-xs font-bold text-gray-500 flex items-center space-x-0.5">
+              <span class="text-xs font-bold text-gray-500 flex flex-col items-center leading-none">
                 <span>${laneKey}</span>
-                <span class="text-[9px] text-red-500">▼ ENTRA</span>
+                <span class="text-[8px] text-gray-600 mt-1 uppercase font-mono">(${totalInLane} karts)</span>
               </span>
               
               <div 
@@ -387,6 +398,9 @@ function PitLanes({ data }) {
                   
                   if (kartObj) {
                     const styles = tierColors[kartObj.tier];
+                    // El número de kart se calcula dinámicamente (1 a totalKarts en la fila)
+                    const displayNum = getDynamicKartNumber(laneKey, slotIdx);
+                    
                     return html`
                       <button 
                         type="button"
@@ -395,7 +409,7 @@ function PitLanes({ data }) {
                           ${styles.bg} ${styles.text} 
                           ${isSelected ? 'ring-4 ring-white border border-black animate-pulse' : 'border border-transparent'}"
                       >
-                        ${kartObj.kart}
+                        ${displayNum}
                       </button>
                     `;
                   } else {
@@ -413,7 +427,10 @@ function PitLanes({ data }) {
         })}
       </div>
 
-      <!-- PANEL: AGREGAR NUEVO KART (Siempre activo, enumeración automática al elegir fila) -->
+      <!-- ESPACIADOR -->
+      <div class="h-4 flex-shrink-0"></div>
+
+      <!-- PANEL: AGREGAR NUEVO KART (Siempre activo, encolamiento automático al elegir fila) -->
       <div class="mb-4 mt-4 flex-shrink-0">
         <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">AGREGAR NUEVO KART</span>
         <div class="grid grid-cols-3 gap-2">
@@ -447,10 +464,12 @@ function PitLanes({ data }) {
       </div>
 
       <!-- PANEL DE KART SELECCIONADO (Solo visible al hacer clic en un kart de la fila) -->
-      ${selectedKart ? html`
+      ${selectedKart && pitLanes[selectedKart.lane] && pitLanes[selectedKart.lane][selectedKart.slotIndex] ? html`
         <div class="bg-[#0E0E10] border border-gray-900 rounded-xl p-3.5 flex flex-col space-y-2.5 mb-2 flex-shrink-0 animate-fade-in">
           <div class="flex items-center justify-between">
-            <span class="text-[9px] uppercase tracking-wider text-gray-500 font-extrabold">EDITAR KART #${selectedKart.kartNumber}</span>
+            <span class="text-[9px] uppercase tracking-wider text-gray-500 font-extrabold">
+              EDITAR KART #${getDynamicKartNumber(selectedKart.lane, selectedKart.slotIndex)} (FILA ${selectedKart.lane})
+            </span>
             <button 
               type="button"
               onClick=${() => setSelectedKart(null)}
@@ -490,7 +509,7 @@ function PitLanes({ data }) {
           <button 
             type="button"
             onClick=${() => {
-              apexService.removeKartFromPitLane(selectedKart.kartNumber);
+              apexService.removeKartAtSlot(selectedKart.lane, selectedKart.slotIndex);
               setSelectedKart(null);
             }}
             class="w-full py-2.5 bg-red-950/20 hover:bg-red-950/40 text-neonRed border border-neonRed/30 rounded-lg text-xs font-bold transition-all active:scale-[0.98]"
@@ -504,7 +523,7 @@ function PitLanes({ data }) {
         </div>
       `}
 
-      <!-- MODAL SELECTOR DE FILA (Abre al presionar + Rápido/Medio/Lento) -->
+      <!-- MODAL SELECTOR DE FILA -->
       ${showLaneModal && html`
         <div class="fixed inset-0 bg-black/85 flex items-center justify-center p-6 z-50 backdrop-blur-sm">
           <div class="w-full max-w-xs bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl">
