@@ -12,13 +12,14 @@ function formatLapTime(ms) {
   return minutes > 0 ? `${minutes}:${seconds.padStart(6, '0')}` : seconds;
 }
 
+// Rangos de tiempos configurados en base al rendimiento (Tier) en español
 const TIER_RANGES = {
-  'Fast': { min: 45000, max: 46800 },
-  'Normal': { min: 47000, max: 49500 },
-  'Slow': { min: 50000, max: 54000 }
+  'Rápido': { min: 45000, max: 46800 },
+  'Medio': { min: 47000, max: 49500 },
+  'Lento': { min: 50000, max: 54000 }
 };
 
-// 3. Servicio de Simulación Live Timing (Configuración dinámica de filas y slots)
+// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con idioma español)
 class ApexService {
   constructor() {
     this.subscribers = new Set();
@@ -33,29 +34,29 @@ class ApexService {
     };
 
     this.drivers = [
-      { id: "1", name: "Marc Gené Jr", kart: "4", tier: "Fast", bestLap: 45210, lastLap: 45430, currentLapNum: 8, sector: 1, s1: 15020, s2: 15110, s3: 15300, currentLapStart: Date.now(), speed: 78, gap: 0, status: "TRACK" },
-      { id: "2", name: "Carlos Sainz III", kart: "1", tier: "Fast", bestLap: 45450, lastLap: 45670, currentLapNum: 8, sector: 2, s1: 15150, s2: 15200, s3: 0, currentLapStart: Date.now() - 15000, speed: 82, gap: 240, status: "TRACK" },
-      { id: "3", name: "A. Albon (Sim)", kart: "2", tier: "Normal", bestLap: 47210, lastLap: 47550, currentLapNum: 7, sector: 3, s1: 15800, s2: 15900, s3: 0, currentLapStart: Date.now() - 31000, speed: 65, gap: 2000, status: "TRACK" },
-      { id: "4", name: "L. Hamilton (Sim)", kart: "3", tier: "Slow", bestLap: 50920, lastLap: 51220, currentLapNum: 6, sector: 1, s1: 17200, s2: 0, s3: 0, currentLapStart: Date.now() - 5000, speed: 58, gap: 5710, status: "TRACK" },
-      { id: "5", name: "M. Verstappen (Sim)", kart: "8", tier: "Normal", bestLap: 47890, lastLap: 48100, currentLapNum: 7, sector: 2, s1: 16100, s2: 16200, s3: 0, currentLapStart: Date.now() - 20000, speed: 70, gap: 2680, status: "TRACK" }
+      { id: "1", name: "Marc Gené Jr", kart: "4", tier: "Rápido", bestLap: 45210, lastLap: 45430, currentLapNum: 8, sector: 1, s1: 15020, s2: 15110, s3: 15300, currentLapStart: Date.now(), speed: 78, gap: 0, status: "TRACK" },
+      { id: "2", name: "Carlos Sainz III", kart: "1", tier: "Rápido", bestLap: 45450, lastLap: 45670, currentLapNum: 8, sector: 2, s1: 15150, s2: 15200, s3: 0, currentLapStart: Date.now() - 15000, speed: 82, gap: 240, status: "TRACK" },
+      { id: "3", name: "A. Albon (Sim)", kart: "2", tier: "Medio", bestLap: 47210, lastLap: 47550, currentLapNum: 7, sector: 3, s1: 15800, s2: 15900, s3: 0, currentLapStart: Date.now() - 31000, speed: 65, gap: 2000, status: "TRACK" },
+      { id: "4", name: "L. Hamilton (Sim)", kart: "3", tier: "Lento", bestLap: 50920, lastLap: 51220, currentLapNum: 6, sector: 1, s1: 17200, s2: 0, s3: 0, currentLapStart: Date.now() - 5000, speed: 58, gap: 5710, status: "TRACK" },
+      { id: "5", name: "M. Verstappen (Sim)", kart: "8", tier: "Medio", bestLap: 47890, lastLap: 48100, currentLapNum: 7, sector: 2, s1: 16100, s2: 16200, s3: 0, currentLapStart: Date.now() - 20000, speed: 70, gap: 2680, status: "TRACK" }
     ];
 
-    // Cantidad inicial de filas (Lanes) y slots por fila
+    // Cantidad inicial de filas (Lanes) y karts por fila
     this.numLanes = 2;
     this.numSlots = 4;
 
     this.pitLanes = {
       L1: [
-        { kart: "1", tier: "Fast" },
-        { kart: "2", tier: "Normal" },
-        { kart: "3", tier: "Slow" },
-        { kart: "4", tier: "Fast" }
+        { kart: "1", tier: "Rápido" },
+        { kart: "2", tier: "Medio" },
+        { kart: "3", tier: "Lento" },
+        { kart: "4", tier: "Rápido" }
       ],
       L2: [
-        { kart: "1", tier: "Normal" },
-        { kart: "2", tier: "Slow" },
-        { kart: "3", tier: "Normal" },
-        { kart: "4", tier: "Normal" }
+        { kart: "1", tier: "Medio" },
+        { kart: "2", tier: "Lento" },
+        { kart: "3", tier: "Medio" },
+        { kart: "4", tier: "Medio" }
       ]
     };
 
@@ -84,7 +85,6 @@ class ApexService {
     };
   }
 
-  // Ajusta la configuración de filas y slots dinámicamente
   setPitLaneLayout(numLanes, numSlots) {
     this.numLanes = Math.max(1, Math.min(6, numLanes)); // Límite seguro para pantallas móviles (1-6)
     this.numSlots = Math.max(1, Math.min(8, numSlots)); // Límite seguro para pantallas móviles (1-8)
@@ -149,7 +149,7 @@ class ApexService {
   }
 
   releaseKartToTrack(kartNumber, driverName) {
-    let tier = "Normal";
+    let tier = "Medio";
     for (let lane of Object.keys(this.pitLanes)) {
       const kartObj = this.pitLanes[lane].find(k => k && k.kart === kartNumber);
       if (kartObj) {
@@ -254,7 +254,7 @@ class ApexService {
 
 const apexService = new ApexService();
 
-// 4. Componente Navigation
+// 4. Componente Navigation (Totalmente en español)
 function Navigation({ sessionData }) {
   const formatSeconds = (sec) => {
     const mins = Math.floor(sec / 60);
@@ -265,13 +265,13 @@ function Navigation({ sessionData }) {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'GREEN':
-        return html`<span class="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 text-[9px] font-extrabold animate-pulse">LIVE</span>`;
+        return html`<span class="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 text-[9px] font-extrabold animate-pulse">EN VIVO</span>`;
       case 'YELLOW':
-        return html`<span class="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-[9px] font-extrabold">SLOW</span>`;
+        return html`<span class="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-[9px] font-extrabold">BANDERA AMARILLA</span>`;
       case 'RED':
-        return html`<span class="px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 text-[9px] font-extrabold">STOP</span>`;
+        return html`<span class="px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 text-[9px] font-extrabold">SESIÓN DETENIDA</span>`;
       case 'CHECKERED':
-        return html`<span class="px-1.5 py-0.5 rounded bg-white/10 text-white border border-white/20 text-[9px] font-extrabold">FIN</span>`;
+        return html`<span class="px-1.5 py-0.5 rounded bg-white/10 text-white border border-white/20 text-[9px] font-extrabold">FINALIZADO</span>`;
       default:
         return null;
     }
@@ -295,7 +295,7 @@ function Navigation({ sessionData }) {
   `;
 }
 
-// 5. Componente PitLanes (Configuración de filas y karts interactiva)
+// 5. Componente PitLanes (Españolizado y con colores Verde/Naranja/Rojo)
 function PitLanes({ data }) {
   const { pitLanes, numLanes, numSlots } = data;
   const [selectedKart, setSelectedKart] = useState(null);
@@ -304,17 +304,18 @@ function PitLanes({ data }) {
   const [addModeLane, setAddModeLane] = useState("L1");
   const [addModeSlot, setAddModeSlot] = useState(0);
 
+  // Paleta de colores solicitada: Rápido = Verde, Medio = Naranja, Lento = Rojo
   const tierColors = {
-    'Fast': {
-      bg: 'bg-[#00E5FF] shadow-[0_0_12px_rgba(0,229,255,0.4)]',
+    'Rápido': {
+      bg: 'bg-[#39FF14] shadow-[0_0_12px_rgba(57,255,20,0.4)]',
       text: 'text-black font-extrabold'
     },
-    'Normal': {
-      bg: 'bg-[#FFE600] shadow-[0_0_12px_rgba(255,230,0,0.4)]',
+    'Medio': {
+      bg: 'bg-[#FF8C00] shadow-[0_0_12px_rgba(255,140,0,0.4)]',
       text: 'text-black font-extrabold'
     },
-    'Slow': {
-      bg: 'bg-[#FF7FA9] shadow-[0_0_12px_rgba(255,127,169,0.4)]',
+    'Lento': {
+      bg: 'bg-[#FF3131] shadow-[0_0_12px_rgba(255,49,49,0.4)]',
       text: 'text-black font-extrabold'
     }
   };
@@ -339,7 +340,7 @@ function PitLanes({ data }) {
     e.preventDefault();
     if (!newKartNum.trim()) return;
     
-    const defaultTier = selectedKart ? selectedKart.tier : "Normal";
+    const defaultTier = selectedKart ? selectedKart.tier : "Medio";
     apexService.addKartToPitLane(addModeLane, newKartNum.trim(), defaultTier, addModeSlot);
     
     setSelectedKart({
@@ -385,7 +386,6 @@ function PitLanes({ data }) {
     });
   };
 
-  // Ajustadores dinámicos de filas y karts
   const adjustLanes = (delta) => {
     apexService.setPitLaneLayout(numLanes + delta, numSlots);
     setSelectedKart(null);
@@ -396,9 +396,7 @@ function PitLanes({ data }) {
     setSelectedKart(null);
   };
 
-  // Crear array de slots invertido para renderizar de arriba a abajo
   const slotIndices = Array.from({ length: numSlots }, (_, i) => i);
-  // Altura proporcional a la cantidad de slots (52px por botón + 24px de espaciado)
   const laneBoxHeight = numSlots * 52 + 20;
 
   return html`
@@ -408,22 +406,22 @@ function PitLanes({ data }) {
       <div class="flex items-center justify-between border-b border-[#111] pb-3 mb-2 flex-shrink-0">
         <div>
           <span class="text-[10px] uppercase tracking-widest text-[#555] font-bold">Configuración</span>
-          <h2 class="text-lg font-extrabold text-white tracking-tight">PIT LANES</h2>
+          <h2 class="text-lg font-extrabold text-white tracking-tight">CARRIL DE BOXES</h2>
         </div>
         
-        <!-- Legend -->
+        <!-- Legend (Español y Colores Actualizados) -->
         <div class="flex items-center space-x-3 text-[10px] font-bold tracking-wider uppercase text-[#888]">
           <div class="flex items-center space-x-1">
-            <span class="w-2.5 h-2.5 rounded-full bg-[#00E5FF] inline-block"></span>
-            <span>FAST</span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#39FF14] inline-block"></span>
+            <span>RÁPIDO</span>
           </div>
           <div class="flex items-center space-x-1">
-            <span class="w-2.5 h-2.5 rounded-full bg-[#FFE600] inline-block"></span>
-            <span>NORMAL</span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#FF8C00] inline-block"></span>
+            <span>MEDIO</span>
           </div>
           <div class="flex items-center space-x-1">
-            <span class="w-2.5 h-2.5 rounded-full bg-[#FF7FA9] inline-block"></span>
-            <span>SLOW</span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#FF3131] inline-block"></span>
+            <span>LENTO</span>
           </div>
         </div>
       </div>
@@ -432,7 +430,7 @@ function PitLanes({ data }) {
       <div class="bg-[#0E0E10] border border-gray-900/60 rounded-xl p-3 flex items-center justify-around mb-4 flex-shrink-0">
         <!-- Control de Filas -->
         <div class="flex flex-col items-center">
-          <span class="text-[9px] font-extrabold text-gray-500 uppercase tracking-widest mb-1.5">Filas (Lanes)</span>
+          <span class="text-[9px] font-extrabold text-gray-500 uppercase tracking-widest mb-1.5">Filas (Carriles)</span>
           <div class="flex items-center space-x-2">
             <button 
               type="button" 
@@ -489,10 +487,9 @@ function PitLanes({ data }) {
             <div class="flex flex-col items-center space-y-2 w-[76px] flex-shrink-0">
               <span class="text-xs font-bold text-gray-500 flex items-center space-x-0.5">
                 <span>${laneKey}</span>
-                <span class="text-[9px] text-red-500">▼ IN</span>
+                <span class="text-[9px] text-red-500">▼ ENTRA</span>
               </span>
               
-              <!-- Box contenedor con altura autocalculada -->
               <div 
                 class="w-[66px] bg-[#0E0E10] border border-[#1a1a20] rounded-xl flex flex-col-reverse items-center justify-start p-2.5 py-3.5 space-y-3.5 space-y-reverse shadow-inner relative transition-all duration-300"
                 style="height: ${laneBoxHeight}px"
@@ -527,13 +524,13 @@ function PitLanes({ data }) {
                   }
                 })}
               </div>
-              <span class="text-[9px] font-bold text-red-500">▼ OUT</span>
+              <span class="text-[9px] font-bold text-red-500">▼ SALE</span>
             </div>
           `;
         })}
       </div>
 
-      <!-- AUTO / PICK TOGGLE -->
+      <!-- AUTO / SELECCIONAR TOGGLE -->
       <div class="grid grid-cols-2 gap-2 mb-3 mt-4 flex-shrink-0">
         <button type="button" class="flex items-center justify-center space-x-1 py-2 rounded bg-green-950/40 border border-green-800/60 text-green-400 text-xs font-bold shadow-sm">
           <span>⚡</span>
@@ -541,53 +538,53 @@ function PitLanes({ data }) {
         </button>
         <button type="button" class="flex items-center justify-center space-x-1 py-2 rounded bg-[#0E0E10] border border-gray-800 text-gray-400 text-xs font-bold">
           <span>👇</span>
-          <span>Pick</span>
+          <span>Elegir</span>
         </button>
       </div>
 
-      <!-- KART TIER -->
+      <!-- RENDIMIENTO KART (Verde / Naranja / Rojo) -->
       <div class="mb-4 flex-shrink-0">
-        <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">KART TIER</span>
+        <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">RENDIMIENTO KART</span>
         <div class="grid grid-cols-3 gap-2">
           <button 
             type="button"
             disabled=${!selectedKart}
-            onClick=${() => handleTierChange('Fast')}
+            onClick=${() => handleTierChange('Rápido')}
             class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border text-xs font-bold transition-all
               ${!selectedKart ? 'opacity-40 border-[#111] bg-black text-[#444]' : 
-                selectedKart.tier === 'Fast' ? 'border-[#00E5FF] bg-[#00E5FF]/10 text-[#00E5FF]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
+                selectedKart.tier === 'Rápido' ? 'border-[#39FF14] bg-[#39FF14]/10 text-[#39FF14]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
           >
-            <span class="w-2 h-2 rounded-full bg-[#00E5FF]"></span>
-            <span>Fast</span>
+            <span class="w-2 h-2 rounded-full bg-[#39FF14]"></span>
+            <span>Rápido</span>
           </button>
           
           <button 
             type="button"
             disabled=${!selectedKart}
-            onClick=${() => handleTierChange('Normal')}
+            onClick=${() => handleTierChange('Medio')}
             class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border text-xs font-bold transition-all
               ${!selectedKart ? 'opacity-40 border-[#111] bg-black text-[#444]' : 
-                selectedKart.tier === 'Normal' ? 'border-[#FFE600] bg-[#FFE600]/10 text-[#FFE600]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
+                selectedKart.tier === 'Medio' ? 'border-[#FF8C00] bg-[#FF8C00]/10 text-[#FF8C00]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
           >
-            <span class="w-2 h-2 rounded-full bg-[#FFE600]"></span>
-            <span>Normal</span>
+            <span class="w-2 h-2 rounded-full bg-[#FF8C00]"></span>
+            <span>Medio</span>
           </button>
           
           <button 
             type="button"
             disabled=${!selectedKart}
-            onClick=${() => handleTierChange('Slow')}
+            onClick=${() => handleTierChange('Lento')}
             class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border text-xs font-bold transition-all
               ${!selectedKart ? 'opacity-40 border-[#111] bg-black text-[#444]' : 
-                selectedKart.tier === 'Slow' ? 'border-[#FF7FA9] bg-[#FF7FA9]/10 text-[#FF7FA9]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
+                selectedKart.tier === 'Lento' ? 'border-[#FF3131] bg-[#FF3131]/10 text-[#FF3131]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
           >
-            <span class="w-2 h-2 rounded-full bg-[#FF7FA9]"></span>
-            <span>Slow</span>
+            <span class="w-2 h-2 rounded-full bg-[#FF3131]"></span>
+            <span>Lento</span>
           </button>
         </div>
       </div>
 
-      <!-- LANE SWITCH (Dinámico según número de filas activas) -->
+      <!-- CAMBIAR CARRIL -->
       <div class="mb-4 flex-shrink-0">
         <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">CAMBIAR CARRIL</span>
         <div class="flex flex-wrap gap-2">
@@ -606,7 +603,7 @@ function PitLanes({ data }) {
         </div>
       </div>
 
-      <!-- BOTTOM ACTION -->
+      <!-- BOTTOM ACTION (Salida manual a Pista) -->
       <div class="flex items-center space-x-2 flex-shrink-0">
         <button 
           type="button"
@@ -617,7 +614,7 @@ function PitLanes({ data }) {
               'border-[#FF3131]/30 bg-red-950/20 text-[#FF3131] hover:bg-red-950/40 shadow-[0_0_15px_rgba(255,49,49,0.1)] active:scale-[0.98]'}"
         >
           <span>🏎️</span>
-          <span>Manual Exit (Pista)</span>
+          <span>Salida a Pista (Manual)</span>
         </button>
         ${selectedKart && html`
           <button 
