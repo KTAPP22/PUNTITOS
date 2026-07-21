@@ -229,7 +229,7 @@ const apexService = new ApexService();
 function Navigation() {
   return html`
     <header class="bg-[#000000] border-b border-[#111111] px-4 py-4 flex items-center justify-start flex-shrink-0 safe-top">
-      <span class="text-neonYellow font-extrabold text-lg tracking-tighter">PITGUIDE</span>
+      <span class="text-[#B026FF] font-extrabold text-lg tracking-tighter">PITGUIDE</span>
     </header>
   `;
 }
