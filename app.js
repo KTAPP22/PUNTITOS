@@ -741,7 +741,6 @@ function App() {
   useEffect(() => {
     if (!currentUser || !currentUser.is_active) return;
 
-    // 1. Obtener estado inicial de boxes
     const fetchLayout = async () => {
       const { data, error } = await db.from('pit_lanes_state').select('*').single();
       if (!error && data) {
@@ -752,8 +751,8 @@ function App() {
           pitLanes: data.pit_lanes,
           session: { ...prev.session, trackName: data.track_name }
         }));
-      } else if (error && isSupabaseConfigured) {
-        // Inicializar tabla si está vacía
+      } else {
+        // Inicializar base de datos o almacenamiento local con datos por defecto si está vacía
         const defaultState = {
           id: 'current_layout',
           num_lanes: 2,
@@ -762,6 +761,13 @@ function App() {
           pit_lanes: apexService.getDefaultPitLanes()
         };
         await db.from('pit_lanes_state').upsert(defaultState);
+        setLiveData(prev => ({
+          ...prev,
+          numLanes: defaultState.num_lanes,
+          numSlots: defaultState.num_slots,
+          pitLanes: defaultState.pit_lanes,
+          session: { ...prev.session, trackName: defaultState.track_name }
+        }));
       }
     };
 
