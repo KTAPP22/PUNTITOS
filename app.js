@@ -3,29 +3,13 @@ const { h, render } = window.preact;
 const { useState, useEffect, useRef } = window.preactHooks;
 const html = window.htm.bind(h);
 
-// 2. Auxiliares de formato de tiempo
-function formatLapTime(ms) {
-  if (!ms || isNaN(ms)) return '--.--';
-  const totalSeconds = ms / 1000;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = (totalSeconds % 60).toFixed(3);
-  return minutes > 0 ? `${minutes}:${seconds.padStart(6, '0')}` : seconds;
-}
-
-// Rangos de tiempos configurados en base al rendimiento (Tier) en español
-const TIER_RANGES = {
-  'Rápido': { min: 45000, max: 46800 },
-  'Medio': { min: 47000, max: 49500 },
-  'Lento': { min: 50000, max: 54000 }
-};
-
 // Mapeo de Circuitos a sus enlaces de Apex Live Timing correspondientes
 const TRACK_TIMINGS = {
   "Lucas Guerrero": "https://live.apex-timing.com/kartodromo-lucas-guerrero/"
   // En el futuro se pueden añadir más circuitos aquí
 };
 
-// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con encolamiento y persistencia)
+// 3. Servicio de Live Timing (Filas y slots dinámicos con encolamiento y persistencia)
 class ApexService {
   constructor() {
     this.subscribers = new Set();
@@ -38,14 +22,6 @@ class ApexService {
       weather: "SECO",
       status: "GREEN"
     };
-
-    this.drivers = [
-      { id: "1", name: "Marc Gené Jr", kart: "4", tier: "Rápido", bestLap: 45210, lastLap: 45430, currentLapNum: 8, sector: 1, s1: 15020, s2: 15110, s3: 15300, currentLapStart: Date.now(), speed: 78, gap: 0, status: "TRACK" },
-      { id: "2", name: "Carlos Sainz III", kart: "1", tier: "Rápido", bestLap: 45450, lastLap: 45670, currentLapNum: 8, sector: 2, s1: 15150, s2: 15200, s3: 0, currentLapStart: Date.now() - 15000, speed: 82, gap: 240, status: "TRACK" },
-      { id: "3", name: "A. Albon (Sim)", kart: "2", tier: "Medio", bestLap: 47210, lastLap: 47550, currentLapNum: 7, sector: 3, s1: 15800, s2: 15900, s3: 0, currentLapStart: Date.now() - 31000, speed: 65, gap: 2000, status: "TRACK" },
-      { id: "4", name: "L. Hamilton (Sim)", kart: "3", tier: "Lento", bestLap: 50920, lastLap: 51220, currentLapNum: 6, sector: 1, s1: 17200, s2: 0, s3: 0, currentLapStart: Date.now() - 5000, speed: 58, gap: 5710, status: "TRACK" },
-      { id: "5", name: "M. Verstappen (Sim)", kart: "8", tier: "Medio", bestLap: 47890, lastLap: 48100, currentLapNum: 7, sector: 2, s1: 16100, s2: 16200, s3: 0, currentLapStart: Date.now() - 20000, speed: 70, gap: 2680, status: "TRACK" }
-    ];
 
     // Cargar del LocalStorage o usar valores por defecto
     const savedLanes = localStorage.getItem('pitguide_lanes');
@@ -64,9 +40,6 @@ class ApexService {
     } else {
       this.pitLanes = this.getDefaultPitLanes();
     }
-
-    this.timerId = null;
-    this.startSimulation();
   }
 
   getDefaultPitLanes() {
@@ -119,7 +92,6 @@ class ApexService {
   getPayload() {
     return {
       session: { ...this.session },
-      drivers: JSON.parse(JSON.stringify(this.drivers)),
       pitLanes: JSON.parse(JSON.stringify(this.pitLanes)),
       numLanes: this.numLanes,
       numSlots: this.numSlots
@@ -178,66 +150,6 @@ class ApexService {
       this.saveToLocalStorage();
       this.emit();
     }
-  }
-
-  startSimulation() {
-    this.timerId = setInterval(() => {
-      if (this.session.timeRemaining > 0) {
-        this.session.timeRemaining--;
-      } else {
-        this.session.status = "CHECKERED";
-      }
-
-      this.drivers.forEach(driver => {
-        if (driver.status === "PIT") return;
-
-        driver.speed = Math.floor(55 + Math.random() * 35);
-        const elapsed = Date.now() - driver.currentLapStart;
-        const range = TIER_RANGES[driver.tier];
-        const estimatedLapTime = range.min + (range.max - range.min) * 0.5;
-        const secDuration = estimatedLapTime / 3;
-
-        if (driver.sector === 1 && elapsed >= secDuration) {
-          driver.s1 = Math.floor(secDuration + (Math.random() - 0.5) * 800);
-          driver.sector = 2;
-        } else if (driver.sector === 2 && elapsed >= secDuration * 2) {
-          driver.s2 = Math.floor(secDuration + (Math.random() - 0.5) * 800);
-          driver.sector = 3;
-        } else if (driver.sector === 3 && elapsed >= estimatedLapTime) {
-          driver.s3 = Math.floor(secDuration + (Math.random() - 0.5) * 800);
-          const totalLapTime = driver.s1 + driver.s2 + driver.s3;
-          
-          driver.lastLap = totalLapTime;
-          driver.currentLapNum++;
-          
-          if (driver.bestLap === 0 || totalLapTime < driver.bestLap) {
-            driver.bestLap = totalLapTime;
-          }
-
-          driver.sector = 1;
-          driver.s1 = 0;
-          driver.s2 = 0;
-          driver.s3 = 0;
-          driver.currentLapStart = Date.now();
-        }
-      });
-
-      this.recalculateStandings();
-      this.emit();
-    }, 1000);
-  }
-
-  recalculateStandings() {
-    const rankedDrivers = this.drivers
-      .filter(d => d.bestLap > 0)
-      .sort((a, b) => a.bestLap - b.bestLap);
-
-    rankedDrivers.forEach((driver, index) => {
-      const origDriver = this.drivers.find(d => d.id === driver.id);
-      if (origDriver) {
-        origDriver.gap = index === 0 ? 0 : driver.bestLap - rankedDrivers[0].bestLap;
-      }
-    });
   }
 }
 
