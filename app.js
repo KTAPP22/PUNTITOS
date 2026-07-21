@@ -1,253 +1,34 @@
-// 1. Configuración de Supabase (Reemplaza con tus credenciales para conectar en la nube)
+// 1. Configuración de Supabase (Opcional en código, se puede configurar desde la propia App)
 const SUPABASE_URL = "TU_SUPABASE_URL";
 const SUPABASE_ANON_KEY = "TU_SUPABASE_ANON_KEY";
 
-// Vinculación de Librerías Globales Preact & HTM (Soporte file:// y http://)
+// Vinculación de Librerías Globales Preact & HTM
 const { h, render } = window.preact;
 const { useState, useEffect, useRef } = window.preactHooks;
 const html = window.htm.bind(h);
 
-// 2. Auxiliares de formato de tiempo
-function formatLapTime(ms) {
-  if (!ms || isNaN(ms)) return '--.--';
-  const totalSeconds = ms / 1000;
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = (totalSeconds % 60).toFixed(3);
-  return minutes > 0 ? `${minutes}:${seconds.padStart(6, '0')}` : seconds;
-}
+// 2. Cargar credenciales de Supabase (Prioriza LocalStorage, luego constantes en código)
+let activeSupabaseUrl = localStorage.getItem('pitguide_supabase_url') || SUPABASE_URL;
+let activeSupabaseKey = localStorage.getItem('pitguide_supabase_anon_key') || SUPABASE_ANON_KEY;
 
-const TIER_RANGES = {
-  'Rápido': { min: 45000, max: 46800 },
-  'Medio': { min: 47000, max: 49500 },
-  'Lento': { min: 50000, max: 54000 }
-};
+// Comprobar si está configurado Supabase de forma real
+const isSupabaseConfigured = activeSupabaseUrl && 
+                             activeSupabaseUrl !== "TU_SUPABASE_URL" && 
+                             activeSupabaseUrl.startsWith("http") &&
+                             activeSupabaseKey && 
+                             activeSupabaseKey !== "TU_SUPABASE_ANON_KEY";
 
-const TRACK_TIMINGS = {
-  "Lucas Guerrero": "https://live.apex-timing.com/kartodromo-lucas-guerrero/"
-};
-
-// 3. Mock de Base de Datos Supabase (Simulador Local con LocalStorage)
-function createMockDb() {
-  if (!localStorage.getItem('mock_users')) {
-    const defaultUsers = [
-      { id: "admin-1", email: "alejandrocodel@gmail.com", name: "Administrador Principal", role: "admin", is_active: true, password: "1234" },
-      { id: "viewer-1", email: "piloto1@pitguide.com", name: "Marc Gené Jr", role: "viewer", is_active: true, password: "123" }
-    ];
-    localStorage.setItem('mock_users', JSON.stringify(defaultUsers));
-  }
-
-  const getUsers = () => JSON.parse(localStorage.getItem('mock_users'));
-  const setUsers = (users) => localStorage.setItem('mock_users', JSON.stringify(users));
-
-  // Migración automática para actualizar el correo del admin en el localStorage del usuario
+let db = null;
+if (isSupabaseConfigured) {
   try {
-    const users = getUsers();
-    const adminUser = users.find(u => u.id === "admin-1");
-    if (adminUser && adminUser.email !== "alejandrocodel@gmail.com") {
-      adminUser.email = "alejandrocodel@gmail.com";
-      adminUser.password = "1234";
-      setUsers(users);
-    }
+    db = window.supabase.createClient(activeSupabaseUrl, activeSupabaseKey);
   } catch (e) {
-    console.error("Error al migrar usuario admin:", e);
+    console.error("Error al inicializar Supabase:", e);
   }
-
-  return {
-    isMock: true,
-    auth: {
-      listeners: [],
-      async signUp({ email, password, options }) {
-        const users = getUsers();
-        if (users.find(u => u.email === email)) {
-          return { data: null, error: { message: "El correo ya está registrado." } };
-        }
-        const name = options?.data?.name || "Usuario";
-        // Si el correo es el admin, entra activo; si no, inactivo esperando aprobación
-        const isAdminEmail = email.toLowerCase() === "alejandrocodel@gmail.com";
-        const role = isAdminEmail ? "admin" : "viewer";
-        // Los nuevos usuarios registrados entran activos directamente (is_active = true) pero sin modo admin (role = viewer)
-        const is_active = true;
-        
-        const newUser = { id: 'u-' + Date.now(), email, password, name, role, is_active };
-        users.push(newUser);
-        setUsers(users);
-
-        return { data: { user: newUser }, error: null };
-      },
-      async signInWithPassword({ email, password }) {
-        const users = getUsers();
-        const user = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-        if (!user) {
-          return { data: null, error: { message: "Credenciales incorrectas o contraseña errónea." } };
-        }
-        localStorage.setItem('mock_session_user', JSON.stringify(user));
-        this.notify(user);
-        return { data: { session: { user } }, error: null };
-      },
-      async signOut() {
-        localStorage.removeItem('mock_session_user');
-        this.notify(null);
-        return { error: null };
-      },
-      async getSession() {
-        const user = JSON.parse(localStorage.getItem('mock_session_user'));
-        return { data: { session: user ? { user } : null } };
-      },
-      onAuthStateChange(callback) {
-        this.listeners.push(callback);
-        const user = JSON.parse(localStorage.getItem('mock_session_user'));
-        callback(user ? 'SIGNED_IN' : 'SIGNED_OUT', user ? { user } : null);
-        return { data: { subscription: { unsubscribe: () => {
-          this.listeners = this.listeners.filter(l => l !== callback);
-        }}}};
-      },
-      notify(user) {
-        this.listeners.forEach(l => l(user ? 'SIGNED_IN' : 'SIGNED_OUT', user ? { user } : null));
-      }
-    },
-    from(table) {
-      return {
-        select(fields = "*") {
-          return {
-            async eq(field, value) {
-              if (table === 'profiles') {
-                const users = getUsers();
-                const user = users.find(u => u[field] === value);
-                return { data: user ? [user] : [], error: null };
-              }
-              if (table === 'pit_lanes_state') {
-                const state = JSON.parse(localStorage.getItem('mock_pit_lanes_state'));
-                return { data: state ? [state] : [], error: null };
-              }
-              return { data: [], error: null };
-            },
-            async order(field, { ascending } = {}) {
-              if (table === 'profiles') {
-                let users = getUsers();
-                users.sort((a, b) => ascending ? a[field] > b[field] : a[field] < b[field]);
-                return { data: users, error: null };
-              }
-              return { data: [], error: null };
-            },
-            async single() {
-              if (table === 'pit_lanes_state') {
-                const state = JSON.parse(localStorage.getItem('mock_pit_lanes_state'));
-                return { data: state || null, error: null };
-              }
-              return { data: null, error: null };
-            }
-          };
-        },
-        update(values) {
-          return {
-            async eq(field, value) {
-              if (table === 'profiles') {
-                const users = getUsers();
-                const index = users.findIndex(u => u[field] === value);
-                if (index !== -1) {
-                  users[index] = { ...users[index], ...values };
-                  setUsers(users);
-                  
-                  // Actualizar la sesión si es el usuario logueado en esta pestaña
-                  const currentSessionUser = JSON.parse(localStorage.getItem('mock_session_user'));
-                  if (currentSessionUser && currentSessionUser[field] === value) {
-                    localStorage.setItem('mock_session_user', JSON.stringify(users[index]));
-                    if (window.mockAuthListenerExecutor) {
-                      window.mockAuthListenerExecutor('SIGNED_IN', { user: users[index] });
-                    }
-                  }
-
-                  // Notificar a los listeners en tiempo real
-                  if (window.mockRealtimeListeners) {
-                    window.mockRealtimeListeners.forEach(listener => {
-                      if (listener.table === 'profiles') {
-                        listener.callback({
-                          eventType: 'UPDATE',
-                          new: users[index]
-                        });
-                      }
-                    });
-                  }
-                }
-                return { data: users[index], error: null };
-              }
-              return { data: null, error: null };
-            }
-          };
-        },
-        async insert(values) {
-          if (table === 'profiles') {
-            const users = getUsers();
-            users.push(values);
-            setUsers(users);
-            return { data: values, error: null };
-          }
-          return { data: null, error: null };
-        },
-        async upsert(values) {
-          if (table === 'pit_lanes_state') {
-            localStorage.setItem('mock_pit_lanes_state', JSON.stringify(values));
-            if (window.mockRealtimeListeners) {
-              window.mockRealtimeListeners.forEach(listener => {
-                if (listener.table === 'pit_lanes_state') {
-                  listener.callback({
-                    eventType: 'UPDATE',
-                    new: values
-                  });
-                }
-              });
-            }
-            return { data: values, error: null };
-          }
-          return { data: null, error: null };
-        }
-      };
-    },
-    channel(name) {
-      return {
-        on(event, filter, callback) {
-          if (!window.mockRealtimeListeners) window.mockRealtimeListeners = [];
-          window.mockRealtimeListeners.push({ name, event, table: filter.table, callback });
-          return this;
-        },
-        subscribe() {
-          return this;
-        }
-      };
-    }
-  };
 }
 
-// Inicialización del cliente de base de datos (Supabase o Simulador Local)
-const isSupabaseConfigured = SUPABASE_URL !== "TU_SUPABASE_URL" && SUPABASE_ANON_KEY !== "TU_SUPABASE_ANON_KEY";
-const db = isSupabaseConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : createMockDb();
-
-// 4. Servicio de Simulación Live Timing
-class ApexService {
-  constructor() {
-    this.subscribers = new Set();
-    this.session = {
-      id: "session-2026-07-21",
-      trackName: "Lucas Guerrero",
-      trackLength: "1,428m",
-      sessionType: "Prácticas Libres",
-      timeRemaining: 900,
-      weather: "SECO",
-      status: "GREEN"
-    };
-
-    this.drivers = [
-      { id: "1", name: "Marc Gené Jr", kart: "4", tier: "Rápido", bestLap: 45210, lastLap: 45430, currentLapNum: 8, sector: 1, s1: 15020, s2: 15110, s3: 15300, currentLapStart: Date.now(), speed: 78, gap: 0, status: "TRACK" },
-      { id: "2", name: "Carlos Sainz III", kart: "1", tier: "Rápido", bestLap: 45450, lastLap: 45670, currentLapNum: 8, sector: 2, s1: 15150, s2: 15200, s3: 0, currentLapStart: Date.now() - 15000, speed: 82, gap: 240, status: "TRACK" },
-      { id: "3", name: "A. Albon (Sim)", kart: "2", tier: "Medio", bestLap: 47210, lastLap: 47550, currentLapNum: 7, sector: 3, s1: 15800, s2: 15900, s3: 0, currentLapStart: Date.now() - 31000, speed: 65, gap: 2000, status: "TRACK" },
-      { id: "4", name: "L. Hamilton (Sim)", kart: "3", tier: "Lento", bestLap: 50920, lastLap: 51220, currentLapNum: 6, sector: 1, s1: 17200, s2: 0, s3: 0, currentLapStart: Date.now() - 5000, speed: 58, gap: 5710, status: "TRACK" },
-      { id: "5", name: "M. Verstappen (Sim)", kart: "8", tier: "Medio", bestLap: 47890, lastLap: 48100, currentLapNum: 7, sector: 2, s1: 16100, s2: 16200, s3: 0, currentLapStart: Date.now() - 20000, speed: 70, gap: 2680, status: "TRACK" }
-    ];
-
-    this.timerId = null;
-    this.startSimulation();
-  }
-
+// Auxiliar para inicializar los boxes por defecto
+const apexService = {
   getDefaultPitLanes() {
     return {
       L1: [
@@ -264,112 +45,28 @@ class ApexService {
       ]
     };
   }
+};
 
-  subscribe(callback) {
-    this.subscribers.add(callback);
-    callback(this.getData());
-    return () => this.subscribers.delete(callback);
-  }
+const TRACK_TIMINGS = {
+  "Lucas Guerrero": "https://live.apex-timing.com/kartodromo-lucas-guerrero/"
+};
 
-  emit() {
-    const data = this.getData();
-    this.subscribers.forEach(callback => callback(data));
-  }
-
-  getData() {
-    return {
-      session: { ...this.session },
-      drivers: [...this.drivers]
-    };
-  }
-
-  startSimulation() {
-    if (this.timerId) return;
-
-    this.timerId = setInterval(() => {
-      // Decrementar tiempo restante
-      if (this.session.timeRemaining > 0) {
-        this.session.timeRemaining--;
-      }
-
-      // Simular vueltas de pilotos en pista
-      this.drivers = this.drivers.map(d => {
-        if (d.status !== "TRACK") return d;
-
-        const now = Date.now();
-        const elapsed = now - d.currentLapStart;
-        const range = TIER_RANGES[d.tier] || TIER_RANGES['Medio'];
-        const targetLapTime = (range.min + range.max) / 2;
-
-        let nextSector = d.sector;
-        let nextS1 = d.s1;
-        let nextS2 = d.s2;
-        let nextS3 = d.s3;
-        let nextLastLap = d.lastLap;
-        let nextBestLap = d.bestLap;
-        let nextLapNum = d.currentLapNum;
-        let nextLapStart = d.currentLapStart;
-
-        // Simular progresión de sectores en base al tiempo
-        if (d.sector === 1 && elapsed > targetLapTime / 3) {
-          nextSector = 2;
-          nextS1 = Math.floor(targetLapTime / 3 + (Math.random() - 0.5) * 500);
-        } else if (d.sector === 2 && elapsed > (targetLapTime / 3) * 2) {
-          nextSector = 3;
-          nextS2 = Math.floor(targetLapTime / 3 + (Math.random() - 0.5) * 500);
-        } else if (d.sector === 3 && elapsed > targetLapTime) {
-          // Vuelta completada
-          nextSector = 1;
-          nextS3 = Math.floor(targetLapTime / 3 + (Math.random() - 0.5) * 500);
-          const totalLapTime = nextS1 + nextS2 + nextS3;
-          
-          nextLastLap = totalLapTime;
-          if (nextBestLap === 0 || totalLapTime < nextBestLap) {
-            nextBestLap = totalLapTime;
-          }
-          nextLapNum++;
-          nextLapStart = now;
-          nextS1 = 0;
-          nextS2 = 0;
-          nextS3 = 0;
-        }
-
-        // Variar velocidad ligeramente
-        const speedBase = d.tier === 'Rápido' ? 80 : d.tier === 'Medio' ? 70 : 60;
-        const nextSpeed = Math.floor(speedBase + (Math.random() - 0.5) * 6);
-
-        return {
-          ...d,
-          sector: nextSector,
-          s1: nextS1,
-          s2: nextS2,
-          s3: nextS3,
-          lastLap: nextLastLap,
-          bestLap: nextBestLap,
-          currentLapNum: nextLapNum,
-          currentLapStart: nextLapStart,
-          speed: nextSpeed
-        };
-      });
-
-      this.emit();
-    }, 1000);
-  }
-}
-
-const apexService = new ApexService();
-
-// 5. Componente Navigation (Cabecera)
-function Navigation({ trackName, onTrackClick, onLogout, onAccessClick, userRole }) {
+// 3. Componente Navigation (Cabecera)
+function Navigation({ trackName, onTrackClick, onLogout, onAccessClick, userRole, onConfigClick }) {
   const isAdmin = userRole === 'admin';
   
   return html`
     <header class="bg-[#000000] border-b border-[#111111] px-4 py-3 flex items-center justify-between flex-shrink-0 safe-top">
       <div class="flex items-center space-x-2">
         <span class="text-[#B026FF] font-extrabold text-lg tracking-tighter">PITGUIDE</span>
-        ${db.isMock && html`
-          <span class="text-[8px] bg-yellow-950/40 text-yellow-500 border border-yellow-800/40 px-1 py-0.5 rounded uppercase font-bold tracking-wider">Simulando</span>
-        `}
+        <button 
+          type="button"
+          onClick=${onConfigClick}
+          class="text-[7.5px] bg-[#1a1a22] text-gray-400 hover:text-white border border-gray-800 px-1 py-0.5 rounded uppercase font-bold tracking-wider"
+          title="Configuración de Base de Datos"
+        >
+          Cloud Real
+        </button>
       </div>
       <div class="flex items-center space-x-2">
         <!-- Botón de Circuito -->
@@ -409,10 +106,10 @@ function Navigation({ trackName, onTrackClick, onLogout, onAccessClick, userRole
   `;
 }
 
-// 6. Componente PitLanes
+// 4. Componente PitLanes
 function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, onUpdateLayout }) {
   const { pitLanes, numLanes, numSlots } = data;
-  const isAdmin = true; // Todos los usuarios registrados y activos tienen permisos de edición en boxes
+  const isAdmin = userRole === 'admin';
 
   const tierColors = {
     'Rápido': {
@@ -449,7 +146,7 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
   };
 
   const handleSlotClick = (lane, slotIndex, kartObj) => {
-    if (!isAdmin) return; // Espectadores no pueden clickar/editar
+    // Todos los usuarios activos (admin o normales) pueden interactuar con boxes
     if (kartObj) {
       setSelectedKart({ lane, slotIndex, tier: kartObj.tier });
     }
@@ -531,33 +228,29 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
         </div>
       </div>
 
-      <!-- PANEL DE CONTROL DINÁMICO DE FILAS Y KARTS -->
+      <!-- PANEL DE CONTROL DINÁMICO DE FILAS Y KARTS (Cualquier usuario activo puede usarlo) -->
       <div class="bg-[#0E0E10] border border-gray-900/60 rounded-xl p-3 flex items-center justify-around mb-4 flex-shrink-0">
         <!-- Control de Filas -->
         <div class="flex flex-col items-center">
           <span class="text-[9px] font-extrabold text-gray-500 uppercase tracking-widest mb-1.5">Filas (Carriles)</span>
           <div class="flex items-center space-x-2">
-            ${isAdmin ? html`
-              <button 
-                type="button" 
-                onClick=${() => adjustLanes(-1)} 
-                disabled=${numLanes <= 1}
-                class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonRed disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
-              >
-                -
-              </button>
-            ` : null}
+            <button 
+              type="button" 
+              onClick=${() => adjustLanes(-1)} 
+              disabled=${numLanes <= 1}
+              class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonRed disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
+            >
+              -
+            </button>
             <span class="text-base font-black font-mono w-4 text-center text-white">${numLanes}</span>
-            ${isAdmin ? html`
-              <button 
-                type="button" 
-                onClick=${() => adjustLanes(1)} 
-                disabled=${numLanes >= 6}
-                class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonGreen disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
-              >
-                +
-              </button>
-            ` : null}
+            <button 
+              type="button" 
+              onClick=${() => adjustLanes(1)} 
+              disabled=${numLanes >= 6}
+              class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonGreen disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
+            >
+              +
+            </button>
           </div>
         </div>
 
@@ -567,27 +260,23 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
         <div class="flex flex-col items-center">
           <span class="text-[9px] font-extrabold text-gray-500 uppercase tracking-widest mb-1.5">Karts / Fila</span>
           <div class="flex items-center space-x-2">
-            ${isAdmin ? html`
-              <button 
-                type="button" 
-                onClick=${() => adjustSlots(-1)} 
-                disabled=${numSlots <= 1}
-                class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonRed disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
-              >
-                -
-              </button>
-            ` : null}
+            <button 
+              type="button" 
+              onClick=${() => adjustSlots(-1)} 
+              disabled=${numSlots <= 1}
+              class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonRed disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
+            >
+              -
+            </button>
             <span class="text-base font-black font-mono w-4 text-center text-white">${numSlots}</span>
-            ${isAdmin ? html`
-              <button 
-                type="button" 
-                onClick=${() => adjustSlots(1)} 
-                disabled=${numSlots >= 8}
-                class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonGreen disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
-              >
-                +
-              </button>
-            ` : null}
+            <button 
+              type="button" 
+              onClick=${() => adjustSlots(1)} 
+              disabled=${numSlots >= 8}
+              class="w-7 h-7 bg-black border border-gray-800 rounded-lg flex items-center justify-center text-sm font-extrabold text-neonGreen disabled:opacity-20 disabled:pointer-events-none hover:bg-gray-950 transition-all"
+            >
+              +
+            </button>
           </div>
         </div>
       </div>
@@ -616,28 +305,17 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
                     const styles = tierColors[kartObj.tier] || { bg: 'bg-gray-600', text: 'text-white font-mono' };
                     const displayNum = getDynamicKartNumber(laneKey, slotIdx);
                     
-                    if (isAdmin) {
-                      return html`
-                        <button 
-                          type="button"
-                          onClick=${() => handleSlotClick(laneKey, slotIdx, kartObj)}
-                          class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-extrabold transition-all duration-200 transform hover:scale-105 active:scale-95 z-10
-                            ${styles.bg} ${styles.text} 
-                            ${isSelected ? 'ring-4 ring-white border border-black animate-pulse' : 'border border-transparent'}"
-                        >
-                          ${displayNum}
-                        </button>
-                      `;
-                    } else {
-                      return html`
-                        <div 
-                          class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-extrabold z-10 select-none
-                            ${styles.bg} ${styles.text} border border-transparent"
-                        >
-                          ${displayNum}
-                        </div>
-                      `;
-                    }
+                    return html`
+                      <button 
+                        type="button"
+                        onClick=${() => handleSlotClick(laneKey, slotIdx, kartObj)}
+                        class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-extrabold transition-all duration-200 transform hover:scale-105 active:scale-95 z-10
+                          ${styles.bg} ${styles.text} 
+                          ${isSelected ? 'ring-4 ring-white border border-black animate-pulse' : 'border border-transparent'}"
+                      >
+                        ${displayNum}
+                      </button>
+                    `;
                   } else {
                     return html`
                       <div class="w-10 h-10 rounded-full border border-dashed border-gray-800/30 flex items-center justify-center text-gray-800 text-[10px] select-none">
@@ -657,46 +335,40 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
       <div class="h-4 flex-shrink-0"></div>
 
       <!-- PANEL: AGREGAR NUEVO KART -->
-      ${isAdmin ? html`
-        <div class="mb-4 mt-2 flex-shrink-0">
-          <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">AGREGAR NUEVO KART</span>
-          <div class="grid grid-cols-3 gap-2">
-            <button 
-              type="button"
-              onClick=${() => onAddClick('Rápido')}
-              class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#39FF14]/30 bg-[#39FF14]/5 text-[#39FF14] hover:bg-[#39FF14]/15 text-xs font-bold transition-all active:scale-[0.98]"
-            >
-              <span class="w-2.5 h-2.5 rounded-full bg-[#39FF14]"></span>
-              <span>+ Rápido</span>
-            </button>
-            
-            <button 
-              type="button"
-              onClick=${() => onAddClick('Medio')}
-              class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF8C00]/30 bg-[#FF8C00]/5 text-[#FF8C00] hover:bg-[#FF8C00]/15 text-xs font-bold transition-all active:scale-[0.98]"
-            >
-              <span class="w-2.5 h-2.5 rounded-full bg-[#FF8C00]"></span>
-              <span>+ Medio</span>
-            </button>
-            
-            <button 
-              type="button"
-              onClick=${() => onAddClick('Lento')}
-              class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF3131]/30 bg-[#FF3131]/5 text-[#FF3131] hover:bg-[#FF3131]/15 text-xs font-bold transition-all active:scale-[0.98]"
-            >
-              <span class="w-2.5 h-2.5 rounded-full bg-[#FF3131]"></span>
-              <span>+ Lento</span>
-            </button>
-          </div>
+      <div class="mb-4 mt-2 flex-shrink-0">
+        <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">AGREGAR NUEVO KART</span>
+        <div class="grid grid-cols-3 gap-2">
+          <button 
+            type="button"
+            onClick=${() => onAddClick('Rápido')}
+            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#39FF14]/30 bg-[#39FF14]/5 text-[#39FF14] hover:bg-[#39FF14]/15 text-xs font-bold transition-all active:scale-[0.98]"
+          >
+            <span class="w-2.5 h-2.5 rounded-full bg-[#39FF14]"></span>
+            <span>+ Rápido</span>
+          </button>
+          
+          <button 
+            type="button"
+            onClick=${() => onAddClick('Medio')}
+            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF8C00]/30 bg-[#FF8C00]/5 text-[#FF8C00] hover:bg-[#FF8C00]/15 text-xs font-bold transition-all active:scale-[0.98]"
+          >
+            <span class="w-2.5 h-2.5 rounded-full bg-[#FF8C00]"></span>
+            <span>+ Medio</span>
+          </button>
+          
+          <button 
+            type="button"
+            onClick=${() => onAddClick('Lento')}
+            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF3131]/30 bg-[#FF3131]/5 text-[#FF3131] hover:bg-[#FF3131]/15 text-xs font-bold transition-all active:scale-[0.98]"
+          >
+            <span class="w-2.5 h-2.5 rounded-full bg-[#FF3131]"></span>
+            <span>+ Lento</span>
+          </button>
         </div>
-      ` : html`
-        <div class="bg-[#0E0E10] border border-gray-900 rounded-xl p-3 text-center text-xs font-bold text-gray-500 flex-shrink-0 select-none">
-          👀 Modo Espectador (Solo Lectura)
-        </div>
-      `}
+      </div>
 
-      <!-- PANEL DE KART SELECCIONADO (Solo visible para Admin al hacer clic en un kart) -->
-      ${isAdmin && selectedKart && pitLanes[selectedKart.lane] && pitLanes[selectedKart.lane][selectedKart.slotIndex] ? html`
+      <!-- PANEL DE KART SELECCIONADO (Visible para cualquier usuario al hacer clic en un kart) -->
+      ${selectedKart && pitLanes[selectedKart.lane] && pitLanes[selectedKart.lane][selectedKart.slotIndex] ? html`
         <div class="bg-[#0E0E10] border border-gray-900 rounded-xl p-3.5 flex flex-col space-y-2.5 mb-2 flex-shrink-0 animate-fade-in">
           <div class="flex items-center justify-between">
             <span class="text-[9px] uppercase tracking-wider text-gray-500 font-extrabold">
@@ -751,17 +423,17 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
             🗑️ Eliminar Kart de la Fila
           </button>
         </div>
-      ` : isAdmin ? html`
+      ` : html`
         <div class="h-[80px] flex items-center justify-center border border-dashed border-gray-900/50 rounded-xl text-gray-700 text-[10px] font-bold flex-shrink-0 select-none">
           Haz clic en un kart para cambiar su velocidad o eliminarlo
         </div>
-      ` : null}
+      `}
 
     </div>
   `;
 }
 
-// 7. Vista del Panel de Acceso (Modalizado para Administradores)
+// 5. Vista del Panel de Acceso (Modalizado para Administradores)
 function AccessControlModal({ currentUser, onClose }) {
   const [usersList, setUsersList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -785,7 +457,7 @@ function AccessControlModal({ currentUser, onClose }) {
       .subscribe();
 
     return () => {
-      db.from('profiles').select('*'); // Desuscribir
+      db.from('profiles').select('*');
     };
   }, []);
 
@@ -823,7 +495,7 @@ function AccessControlModal({ currentUser, onClose }) {
           </button>
         </div>
         
-        <!-- Contenido de Lista -->
+        <!-- List Content -->
         <div class="flex-1 overflow-y-auto no-scrollbar space-y-3 mb-4">
           ${loading 
             ? html`<div class="flex items-center justify-center h-32 text-xs text-gray-500 font-bold">Cargando usuarios...</div>`
@@ -880,7 +552,120 @@ function AccessControlModal({ currentUser, onClose }) {
   `;
 }
 
-// 8. Componente App principal
+// 6. Modal de Configuración de Base de Datos Supabase (Para usar Datos Reales en la nube)
+function SupabaseConfigModal({ onClose }) {
+  const [urlInput, setUrlInput] = useState(localStorage.getItem('pitguide_supabase_url') || "");
+  const [keyInput, setKeyInput] = useState(localStorage.getItem('pitguide_supabase_anon_key') || "");
+
+  const handleSave = () => {
+    if (!urlInput.trim() || !keyInput.trim()) {
+      alert("Por favor introduce una URL y una clave válidas.");
+      return;
+    }
+    localStorage.setItem('pitguide_supabase_url', urlInput.trim());
+    localStorage.setItem('pitguide_supabase_anon_key', keyInput.trim());
+    alert("Credenciales guardadas con éxito. La aplicación se recargará para conectar.");
+    window.location.reload();
+  };
+
+  const handleClear = () => {
+    localStorage.removeItem('pitguide_supabase_url');
+    localStorage.removeItem('pitguide_supabase_anon_key');
+    alert("Credenciales limpiadas. Se usará el simulador local.");
+    window.location.reload();
+  };
+
+  return html`
+    <div class="fixed inset-0 bg-black/95 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div class="w-full max-w-md bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl space-y-4">
+        
+        <!-- Header -->
+        <div class="border-b border-gray-900 pb-3 flex items-center justify-between">
+          <div>
+            <span class="text-[9px] uppercase tracking-widest text-gray-500 font-bold">Base de Datos</span>
+            <h3 class="text-base font-extrabold text-white">CONEXIÓN A SUPABASE (DATOS REALES)</h3>
+          </div>
+          <button type="button" onClick=${onClose} class="text-xs text-gray-500 hover:text-white px-2 py-1 font-bold">Cerrar</button>
+        </div>
+
+        <p class="text-[11px] text-gray-400 leading-relaxed">
+          Para que todos tus mecánicos y pilotos compartan la información y puedas bloquear accesos desde la nube, introduce las credenciales de tu proyecto gratuito de **Supabase**:
+        </p>
+
+        <!-- Formulario -->
+        <div class="space-y-3">
+          <div>
+            <label class="block text-[10px] uppercase font-bold text-gray-500 mb-1">SUPABASE_URL</label>
+            <input 
+              type="text" 
+              value=${urlInput}
+              onInput=${(e) => setUrlInput(e.target.value)}
+              placeholder="https://xyzcompany.supabase.co"
+              class="w-full bg-black border border-gray-800 focus:border-[#B026FF] rounded-lg p-2.5 text-xs text-white focus:outline-none"
+            />
+          </div>
+          <div>
+            <label class="block text-[10px] uppercase font-bold text-gray-500 mb-1">SUPABASE_ANON_KEY</label>
+            <textarea 
+              rows="3"
+              value=${keyInput}
+              onInput=${(e) => setKeyInput(e.target.value)}
+              placeholder="Clave pública anon"
+              class="w-full bg-black border border-gray-800 focus:border-[#B026FF] rounded-lg p-2.5 text-xs text-white focus:outline-none font-mono resize-none"
+            />
+          </div>
+        </div>
+
+        <!-- SQL Schema Guide -->
+        <div class="bg-black/60 border border-gray-900 rounded-lg p-3 space-y-2">
+          <span class="text-[9px] uppercase tracking-widest text-[#B026FF] font-extrabold block">⚙️ Esquema SQL Requerido</span>
+          <p class="text-[9.5px] text-gray-500 leading-tight">Ejecuta esto en el SQL Editor de tu Supabase para crear las tablas necesarias:</p>
+          <pre class="bg-black text-[8px] text-gray-400 p-2 rounded overflow-x-auto font-mono max-h-36">
+-- 1. Tabla de Perfiles
+create table public.profiles (
+  id uuid references auth.users on delete cascade primary key,
+  name text not null,
+  role text not null default 'viewer',
+  is_active boolean not null default true,
+  updated_at timestamp with time zone default now() not null
+);
+
+-- 2. Tabla del Estado de Boxes
+create table public.pit_lanes_state (
+  id text primary key default 'current_layout',
+  num_lanes integer not null default 2,
+  num_slots integer not null default 4,
+  pit_lanes jsonb not null,
+  track_name text not null default 'Lucas Guerrero',
+  updated_at timestamp with time zone default now() not null
+);
+          </pre>
+        </div>
+
+        <!-- Acciones -->
+        <div class="grid grid-cols-2 gap-2 pt-2">
+          <button 
+            type="button"
+            onClick=${handleClear}
+            class="py-2.5 border border-gray-800 text-gray-500 hover:text-red-500 text-xs font-bold rounded-lg transition-all"
+          >
+            Usar Simulación Local
+          </button>
+          <button 
+            type="button"
+            onClick=${handleSave}
+            class="py-2.5 bg-[#B026FF] hover:bg-[#9B10EF] text-white text-xs font-bold rounded-lg transition-all"
+          >
+            Conectar y Guardar
+          </button>
+        </div>
+
+      </div>
+    </div>
+  `;
+}
+
+// 7. Componente App principal
 function App() {
   const [session, setSession] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
@@ -902,6 +687,7 @@ function App() {
   
   // Modales
   const [showAccessModal, setShowAccessModal] = useState(false);
+  const [showConfigModal, setShowConfigModal] = useState(false);
   const [activeTab, setActiveTab] = useState('boxes');
   
   // Vista de Auth ('login' o 'signup')
@@ -952,7 +738,7 @@ function App() {
     };
   }, []);
 
-  // Cargar estado de boxes y telemetría de Supabase o simularlo en tiempo real
+  // Cargar estado de boxes de Supabase o simularlo en tiempo real
   useEffect(() => {
     if (!currentUser || !currentUser.is_active) return;
 
@@ -988,7 +774,7 @@ function App() {
 
     fetchLayout();
 
-    // 2. Suscribirse a cambios en tiempo real
+    // 2. Suscribirse a cambios en tiempo real (WebSockets en Supabase)
     const channel = db.channel('realtime_pit_lanes')
       .on('postgres_changes', { event: '*', table: 'pit_lanes_state' }, (payload) => {
         if (payload.new) {
@@ -1008,15 +794,7 @@ function App() {
       })
       .subscribe();
 
-    const unsubscribeLocal = apexService.subscribe((newData) => {
-      setLiveData(prev => ({
-        ...prev,
-        drivers: newData.drivers
-      }));
-    });
-
     return () => {
-      unsubscribeLocal();
       db.from('pit_lanes_state').select('*'); // Desuscribir
     };
   }, [currentUser]);
@@ -1048,7 +826,7 @@ function App() {
           id: uid,
           name: session.user.user_metadata?.name || session.user.email.split('@')[0],
           role: isUserAdmin ? 'admin' : (session.user.user_metadata?.role || 'viewer'),
-          is_active: true, // Habilitado de forma automática
+          is_active: true, // Habilitado de forma automática al registrarse
           updated_at: new Date().toISOString()
         };
         const { error: insertError } = await db.from('profiles').insert(newProfile);
@@ -1142,7 +920,7 @@ function App() {
       if (error) {
         setAuthError(error.message);
       } else {
-        alert("Cuenta creada con éxito. " + (authEmail.toLowerCase() === 'alejandrocodel@gmail.com' ? "Inicia sesión ahora." : "Espera a que el Administrador te autorice el acceso."));
+        alert("Cuenta creada con éxito. " + (authEmail.toLowerCase() === 'alejandrocodel@gmail.com' ? "Inicia sesión ahora." : "Inicia sesión ahora para comenzar."));
         setAuthView('login');
       }
     }
@@ -1158,23 +936,50 @@ function App() {
     ? "https://live.apex-timing.com/kartodromo-lucas-guerrero/"
     : "https://live.apex-timing.com/kartodromo-lucas-guerrero/";
 
-  // 1. Cargando
-  if (loading) {
+  // 1. Si no hay conexión configurada en Supabase y tampoco en constantes, obligar a configurar para usar datos reales
+  if (!isSupabaseConfigured && !db) {
     return html`
-      <div class="h-full w-full bg-black flex items-center justify-center text-xs text-gray-500 font-bold">
-        Iniciando PITGUIDE...
+      <div class="h-full w-full bg-black flex items-center justify-center p-6 text-white select-none">
+        <div class="w-full max-w-sm bg-[#0E0E10] border border-red-500/20 rounded-xl p-6 shadow-2xl text-center space-y-4">
+          <div class="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto">
+            <span class="text-3xl">📡</span>
+          </div>
+          <h1 class="text-white font-black text-lg tracking-tight uppercase">Conectar Base de Datos Reales</h1>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            Para iniciar tu aplicación y sincronizar datos reales en la nube con todo tu equipo, necesitas configurar tu base de datos Supabase.
+          </p>
+          <div class="pt-2">
+            <button 
+              type="button"
+              onClick=${() => setShowConfigModal(true)}
+              class="w-full py-3 bg-[#B026FF] hover:bg-[#9B10EF] text-sm font-extrabold rounded-lg text-white transition-all active:scale-[0.98]"
+            >
+              Configurar Supabase
+            </button>
+          </div>
+        </div>
+        ${showConfigModal && html`<${SupabaseConfigModal} onClose=${() => setShowConfigModal(false)} />`}
       </div>
     `;
   }
 
-  // 2. Vista de Autenticación (Login/Sign up obligatorio para todos)
+  // 2. Cargando
+  if (loading) {
+    return html`
+      <div class="h-full w-full bg-black flex items-center justify-center text-xs text-gray-500 font-bold">
+        Conectando a base de datos real...
+      </div>
+    `;
+  }
+
+  // 3. Vista de Autenticación (Login/Sign up)
   if (!session || !currentUser) {
     return html`
       <div class="h-full w-full bg-black flex items-center justify-center p-6 text-white select-none">
         <div class="w-full max-w-sm bg-[#0E0E10] border border-gray-900 rounded-xl p-6 shadow-2xl flex flex-col justify-between">
           <div class="text-center mb-6">
             <h1 class="text-[#B026FF] font-extrabold text-2xl tracking-tighter">PITGUIDE</h1>
-            <p class="text-[10px] text-gray-500 uppercase tracking-widest font-mono mt-1">Karting Pit Lane Manager</p>
+            <p class="text-[10px] text-gray-500 uppercase tracking-widest font-mono mt-1">Real-Time Cloud Manager</p>
           </div>
 
           <form onSubmit=${handleAuthSubmit} class="space-y-4">
@@ -1193,7 +998,7 @@ function App() {
                   value=${authName}
                   onInput=${(e) => setAuthName(e.target.value)}
                   class="w-full bg-black border border-gray-800 focus:border-[#B026FF] rounded-lg p-3 text-sm text-white focus:outline-none"
-                  placeholder="Ej. Marc Gené"
+                  placeholder="Ej. Alejandro"
                 />
               </div>
             `}
@@ -1257,7 +1062,7 @@ function App() {
     `;
   }
 
-  // 3. Vista de Acceso Denegado / En espera de Aprobación
+  // 4. Vista de Acceso Denegado
   if (currentUser && !currentUser.is_active) {
     return html`
       <div class="h-full w-full bg-black flex items-center justify-center p-6 text-white select-none">
@@ -1265,12 +1070,12 @@ function App() {
           <div class="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto">
             <span class="text-3xl text-neonRed">🔑</span>
           </div>
-          <h1 class="text-neonRed font-black text-lg tracking-tight uppercase">ESPERANDO APROBACIÓN</h1>
+          <h1 class="text-neonRed font-black text-lg tracking-tight uppercase">ACCESO SUSPENDIDO</h1>
           <p class="text-xs text-gray-400 leading-relaxed">
-            Tu cuenta ha sido creada con éxito, pero requiere que el **Administrador** autorice tu acceso en la base de datos antes de poder visualizar el pit lane.
+            Tu acceso a la telemetría y boxes ha sido revocado por el Administrador.
           </p>
           <div class="bg-black border border-gray-900 rounded-lg p-3 text-left">
-            <span class="text-[9px] uppercase tracking-wider text-gray-600 block">Registrado como:</span>
+            <span class="text-[9px] uppercase tracking-wider text-gray-600 block">Usuario bloqueado:</span>
             <span class="text-sm font-extrabold text-white block mt-0.5">${currentUser.name}</span>
             <span class="text-[10px] text-gray-500 block font-mono">${currentUser.email}</span>
           </div>
@@ -1288,7 +1093,7 @@ function App() {
     `;
   }
 
-  // 4. Vista de la App Principal (Boxes / Timing)
+  // 5. Vista de la App Principal (Boxes / Timing)
   return html`
     <div class="h-full w-full flex flex-col justify-between bg-black overflow-hidden select-none">
       
@@ -1299,9 +1104,10 @@ function App() {
         onLogout=${handleLogout}
         onAccessClick=${() => setShowAccessModal(true)}
         userRole=${currentUser.role}
+        onConfigClick=${() => setShowConfigModal(true)}
       />
 
-      <!-- Segmented Control de Pestañas (Boxes / Live Timing) -->
+      <!-- Segmented Control de Pestañas -->
       <div class="px-3 py-1.5 bg-[#0E0E10] border-b border-[#111111]/80 flex space-x-1.5 flex-shrink-0">
         <button 
           type="button"
@@ -1347,11 +1153,18 @@ function App() {
         }
       </main>
 
-      <!-- MODAL CONTROL DE ACCESOS (Abre con el botón "Acceso" en el Header) -->
+      <!-- MODAL CONTROL DE ACCESOS -->
       ${showAccessModal && html`
         <${AccessControlModal} 
           currentUser=${currentUser} 
           onClose=${() => setShowAccessModal(false)} 
+        />
+      `}
+
+      <!-- MODAL CONFIGURACIÓN BASE DE DATOS -->
+      ${showConfigModal && html`
+        <${SupabaseConfigModal} 
+          onClose=${() => setShowConfigModal(false)} 
         />
       `}
 
@@ -1396,7 +1209,7 @@ function App() {
         </div>
       `}
 
-      <!-- MODAL SELECTOR DE FILA (Para agregar Karts) -->
+      <!-- MODAL SELECTOR DE FILA -->
       ${showLaneModal && html`
         <div class="fixed inset-0 bg-black/85 flex items-center justify-center p-6 z-50 backdrop-blur-sm">
           <div class="w-full max-w-xs bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl">
@@ -1429,5 +1242,5 @@ function App() {
   `;
 }
 
-// 9. Montar en el DOM
+// 8. Montar en el DOM
 render(h(App), document.getElementById('root'));
