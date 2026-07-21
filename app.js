@@ -8,7 +8,6 @@ const { useState, useEffect, useRef } = window.preactHooks;
 const html = window.htm.bind(h);
 
 // 2. Mock de Base de Datos Supabase (Simulador Local con LocalStorage)
-// Si no se han puesto credenciales reales, la app funcionará en modo simulación
 function createMockDb() {
   if (!localStorage.getItem('mock_users')) {
     const defaultUsers = [
@@ -33,7 +32,6 @@ function createMockDb() {
         }
         const name = options?.data?.name || "Usuario";
         const role = options?.data?.role || "viewer";
-        // Los administradores entran activos; los espectadores inician desactivados esperando aprobación
         const is_active = role === "admin" ? true : false;
         
         const newUser = { id: 'u-' + Date.now(), email, password, name, role, is_active };
@@ -143,6 +141,15 @@ function createMockDb() {
             }
           };
         },
+        async insert(values) {
+          if (table === 'profiles') {
+            const users = getUsers();
+            users.push(values);
+            setUsers(users);
+            return { data: values, error: null };
+          }
+          return { data: null, error: null };
+        },
         async upsert(values) {
           if (table === 'pit_lanes_state') {
             localStorage.setItem('mock_pit_lanes_state', JSON.stringify(values));
@@ -193,25 +200,43 @@ const TRACK_TIMINGS = {
   "Lucas Guerrero": "https://live.apex-timing.com/kartodromo-lucas-guerrero/"
 };
 
-// 4. Componente Navigation
-function Navigation({ trackName, onTrackClick, onLogout }) {
+// 4. Componente Navigation (Cabecera con logo morado, selector de circuito, botón de acceso y cerrar sesión)
+function Navigation({ trackName, onTrackClick, onLogout, onAccessClick, userRole }) {
+  const isAdmin = userRole === 'admin';
+  
   return html`
     <header class="bg-[#000000] border-b border-[#111111] px-4 py-3 flex items-center justify-between flex-shrink-0 safe-top">
       <div class="flex items-center space-x-2">
         <span class="text-[#B026FF] font-extrabold text-lg tracking-tighter">PITGUIDE</span>
         ${db.isMock && html`
-          <span class="text-[8px] bg-yellow-950/40 text-yellow-500 border border-yellow-800/40 px-1 py-0.5 rounded uppercase font-bold tracking-wider">Simulador</span>
+          <span class="text-[8px] bg-yellow-950/40 text-yellow-500 border border-yellow-800/40 px-1 py-0.5 rounded uppercase font-bold tracking-wider">Simulando</span>
         `}
       </div>
       <div class="flex items-center space-x-2">
+        <!-- Botón del Circuito -->
         <button 
           type="button"
           onClick=${onTrackClick}
-          class="flex items-center space-x-1 px-2.5 py-1 rounded-md border border-gray-800 bg-[#0E0E10] text-[9.5px] font-extrabold hover:border-gray-500 text-gray-300 transition-all duration-150 active:scale-[0.97]"
+          class="flex items-center space-x-1 px-2 py-1 rounded-md border border-gray-800 bg-[#0E0E10] text-[9.5px] font-extrabold hover:border-gray-500 text-gray-300 transition-all duration-150 active:scale-[0.97]"
         >
           <span>🏁</span>
           <span class="text-white">${trackName || 'Seleccionar Circuito'}</span>
         </button>
+
+        <!-- Botón de Control de Acceso (Solo visible para Admin) -->
+        ${isAdmin && html`
+          <button 
+            type="button"
+            onClick=${onAccessClick}
+            class="flex items-center space-x-1 px-2.5 py-1 rounded-md border border-red-950 bg-red-950/20 text-[9.5px] font-extrabold hover:border-red-500 text-neonRed transition-all duration-150 active:scale-[0.97]"
+            title="Gestionar Usuarios"
+          >
+            <span>🔑</span>
+            <span>Acceso</span>
+          </button>
+        `}
+
+        <!-- Botón de Cerrar Sesión -->
         <button 
           type="button"
           onClick=${onLogout}
@@ -233,15 +258,15 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
   const tierColors = {
     'Rápido': {
       bg: 'bg-[#39FF14] shadow-[0_0_12px_rgba(57,255,20,0.4)]',
-      text: 'text-black font-extrabold'
+      text: 'text-black font-extrabold font-mono'
     },
     'Medio': {
       bg: 'bg-[#FF8C00] shadow-[0_0_12px_rgba(255,140,0,0.4)]',
-      text: 'text-black font-extrabold'
+      text: 'text-black font-extrabold font-mono'
     },
     'Lento': {
       bg: 'bg-[#FF3131] shadow-[0_0_12px_rgba(255,49,49,0.4)]',
-      text: 'text-black font-extrabold'
+      text: 'text-black font-extrabold font-mono'
     }
   };
 
@@ -265,6 +290,7 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
   };
 
   const handleSlotClick = (lane, slotIndex, kartObj) => {
+    console.log("Slot Clicked:", lane, "Index:", slotIndex, "Kart:", kartObj, "isAdmin:", isAdmin);
     if (!isAdmin) return; // Solo lectura para espectadores
     if (kartObj) {
       setSelectedKart({ lane, slotIndex, tier: kartObj.tier });
@@ -423,18 +449,16 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
                   const isSelected = selectedKart && selectedKart.lane === laneKey && selectedKart.slotIndex === slotIdx;
                   
                   if (kartObj) {
-                    const styles = tierColors[kartObj.tier] || { bg: 'bg-gray-600', text: 'text-white' };
+                    const styles = tierColors[kartObj.tier] || { bg: 'bg-gray-600', text: 'text-white font-mono' };
                     const displayNum = getDynamicKartNumber(laneKey, slotIdx);
                     
                     return html`
                       <button 
                         type="button"
-                        disabled=${!isAdmin}
                         onClick=${() => handleSlotClick(laneKey, slotIdx, kartObj)}
                         class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-extrabold transition-all duration-200 transform hover:scale-105 active:scale-95 z-10
                           ${styles.bg} ${styles.text} 
-                          ${isSelected ? 'ring-4 ring-white border border-black animate-pulse' : 'border border-transparent'}
-                          disabled:cursor-default"
+                          ${isSelected ? 'ring-4 ring-white border border-black animate-pulse' : 'border border-transparent'}"
                       >
                         ${displayNum}
                       </button>
@@ -542,12 +566,9 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
           <button 
             type="button"
             onClick=${() => {
-              apexService.removeKartAtSlot(selectedKart.lane, selectedKart.slotIndex);
-              
               const updatedLanes = JSON.parse(JSON.stringify(pitLanes));
               updatedLanes[selectedKart.lane][selectedKart.slotIndex] = null;
               onUpdateLayout(numLanes, numSlots, updatedLanes);
-              
               setSelectedKart(null);
             }}
             class="w-full py-2.5 bg-red-950/20 hover:bg-red-950/40 text-neonRed border border-neonRed/30 rounded-lg text-xs font-bold transition-all active:scale-[0.98]"
@@ -565,8 +586,8 @@ function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, o
   `;
 }
 
-// 6. Vista del Panel de Acceso (Solo para administradores)
-function AccessControl({ currentUser }) {
+// 6. Vista del Panel de Acceso (Modalizado)
+function AccessControlModal({ currentUser, onClose }) {
   const [usersList, setUsersList] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -574,7 +595,6 @@ function AccessControl({ currentUser }) {
     setLoading(true);
     const { data, error } = await db.from('profiles').select('*').order('name', { ascending: true });
     if (!error && data) {
-      // Filtrar para no listarse a uno mismo y evitar autobloqueo
       setUsersList(data.filter(u => u.id !== currentUser.id));
     }
     setLoading(false);
@@ -583,7 +603,6 @@ function AccessControl({ currentUser }) {
   useEffect(() => {
     fetchUsers();
 
-    // Suscripción para escuchar registros en tiempo real en la lista
     const channel = db.channel('realtime_profiles')
       .on('postgres_changes', { event: '*', table: 'profiles' }, () => {
         fetchUsers();
@@ -611,56 +630,77 @@ function AccessControl({ currentUser }) {
   };
 
   return html`
-    <div class="flex-1 flex flex-col h-full bg-[#000000] p-4 text-white overflow-y-auto no-scrollbar">
-      <div class="border-b border-[#111] pb-3 mb-4 flex-shrink-0">
-        <span class="text-[10px] uppercase tracking-widest text-[#555] font-bold">Seguridad</span>
-        <h2 class="text-lg font-extrabold text-white tracking-tight">CONTROL DE ACCESOS</h2>
-      </div>
-
-      ${loading 
-        ? html`<div class="flex-1 flex items-center justify-center text-xs text-gray-500 font-bold">Cargando usuarios...</div>`
-        : usersList.length === 0
-          ? html`<div class="flex-1 flex items-center justify-center text-xs text-gray-600 font-bold">No hay otros usuarios registrados todavía.</div>`
-          : html`
-              <div class="space-y-3">
-                ${usersList.map(u => html`
-                  <div class="bg-[#0E0E10] border border-gray-900 rounded-xl p-3.5 flex flex-col space-y-2">
+    <div class="fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-50 backdrop-blur-md">
+      <div class="w-full max-w-sm bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl flex flex-col h-[85vh] justify-between">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between border-b border-gray-900 pb-3 mb-4 flex-shrink-0">
+          <div>
+            <span class="text-[9px] uppercase tracking-widest text-gray-500 font-bold">Configuración</span>
+            <h3 class="text-sm font-extrabold text-white">CONTROL DE ACCESOS</h3>
+          </div>
+          <button 
+            type="button" 
+            onClick=${onClose}
+            class="text-xs text-gray-500 hover:text-white px-2 py-1 font-bold"
+          >
+            Cerrar
+          </button>
+        </div>
+        
+        <!-- List content -->
+        <div class="flex-1 overflow-y-auto no-scrollbar space-y-3 mb-4">
+          ${loading 
+            ? html`<div class="flex items-center justify-center h-32 text-xs text-gray-500 font-bold">Cargando usuarios...</div>`
+            : usersList.length === 0
+              ? html`<div class="flex items-center justify-center h-32 text-xs text-gray-600 font-bold">No hay otros usuarios registrados todavía.</div>`
+              : usersList.map(u => html`
+                  <div class="bg-black border border-gray-900 rounded-xl p-3 flex flex-col space-y-2">
                     <div class="flex items-center justify-between">
                       <div>
-                        <span class="font-extrabold text-sm text-white block leading-tight">${u.name}</span>
-                        <span class="text-[10px] text-gray-500 block font-mono mt-0.5">${u.email}</span>
+                        <span class="font-extrabold text-xs text-white block leading-tight">${u.name}</span>
+                        <span class="text-[9px] text-gray-600 block font-mono mt-0.5">${u.email}</span>
                       </div>
                       
-                      <!-- Toggle de Acceso ON/OFF -->
+                      <!-- Toggle ON/OFF -->
                       <button 
                         type="button"
                         onClick=${() => handleToggleAccess(u.id, u.is_active)}
-                        class="px-3 py-1.5 rounded-lg border text-xs font-black transition-all active:scale-[0.96]
+                        class="px-2.5 py-1 rounded-md border text-[10px] font-black transition-all active:scale-[0.96]
                           ${u.is_active 
                             ? 'border-green-500/20 bg-green-500/10 text-green-400' 
                             : 'border-red-500/20 bg-red-500/10 text-neonRed'}"
                       >
-                        ${u.is_active ? 'AUTORIZADO' : 'BLOQUEADO'}
+                        ${u.is_active ? 'PERMITIDO' : 'BLOQUEADO'}
                       </button>
                     </div>
 
                     <div class="h-[1px] bg-gray-900/60 my-1"></div>
 
-                    <div class="flex items-center justify-between text-xs">
+                    <div class="flex items-center justify-between text-[11px]">
                       <span class="text-gray-500 font-semibold">Rol del Usuario:</span>
                       <button 
                         type="button"
                         onClick=${() => handleRoleChange(u.id, u.role)}
-                        class="px-2 py-1 rounded bg-black border border-gray-800 text-[10px] uppercase font-bold text-gray-300 hover:text-white"
+                        class="px-2 py-0.5 rounded bg-black border border-gray-800 text-[9px] uppercase font-bold text-gray-300 hover:text-white"
                       >
-                        ${u.role === 'admin' ? '👮 Administrador' : '👀 Espectador'}
+                        ${u.role === 'admin' ? '👮 Admin' : '👀 Espectador'}
                       </button>
                     </div>
                   </div>
-                `)}
-              </div>
-            `
-      }
+                `)
+          }
+        </div>
+        
+        <!-- Bottom button -->
+        <button 
+          type="button" 
+          onClick=${onClose}
+          class="w-full py-2.5 border border-gray-800 text-gray-400 text-xs font-bold rounded-lg hover:text-white flex-shrink-0"
+        >
+          Volver a Boxes
+        </button>
+      </div>
     </div>
   `;
 }
@@ -685,7 +725,8 @@ function App() {
   const [showLaneModal, setShowLaneModal] = useState(false);
   const [modalTier, setModalTier] = useState("Rápido");
   
-  // Pestañas
+  // Modales
+  const [showAccessModal, setShowAccessModal] = useState(false);
   const [activeTab, setActiveTab] = useState('boxes');
   
   // Vista de Auth ('login' o 'signup')
@@ -722,7 +763,6 @@ function App() {
       }
     });
 
-    // Guardar para que el mock pueda llamarlo si se actualiza el perfil del usuario activo
     if (db.isMock) {
       window.mockAuthListenerExecutor = async (event, newSession) => {
         setSession(newSession);
@@ -741,6 +781,7 @@ function App() {
   useEffect(() => {
     if (!currentUser || !currentUser.is_active) return;
 
+    // 1. Obtener estado inicial de boxes
     const fetchLayout = async () => {
       const { data, error } = await db.from('pit_lanes_state').select('*').single();
       if (!error && data) {
@@ -794,7 +835,6 @@ function App() {
       })
       .subscribe();
 
-    // En el simulador, ApexService genera datos locales, nos acoplamos a él también
     const unsubscribeLocal = apexService.subscribe((newData) => {
       setLiveData(prev => ({
         ...prev,
@@ -828,7 +868,22 @@ function App() {
     if (!error && data && data.length > 0) {
       setCurrentUser(data[0]);
     } else {
-      // Si el perfil no existe todavía (e.g. primer login de admin con credenciales pre-cargadas)
+      // Si el perfil no existe todavía en Supabase real, crearlo automáticamente para evitar bloqueos
+      if (isSupabaseConfigured && session?.user) {
+        const newProfile = {
+          id: uid,
+          name: session.user.user_metadata?.name || session.user.email.split('@')[0],
+          role: session.user.user_metadata?.role || 'viewer',
+          is_active: session.user.user_metadata?.role === 'admin' ? true : false,
+          updated_at: new Date().toISOString()
+        };
+        const { error: insertError } = await db.from('profiles').insert(newProfile);
+        if (!insertError) {
+          setCurrentUser(newProfile);
+          return;
+        }
+      }
+      
       const sessionUser = JSON.parse(localStorage.getItem('mock_session_user'));
       if (sessionUser) {
         setCurrentUser(sessionUser);
@@ -837,7 +892,6 @@ function App() {
   };
 
   const handleUpdateLayout = async (numLanes, numSlots, pitLanes) => {
-    // Si es espectador no puede guardar
     if (currentUser.role !== 'admin') return;
 
     const values = {
@@ -1076,7 +1130,7 @@ function App() {
     `;
   }
 
-  // 4. Vista de la App Principal (Boxes / Timing / Acceso)
+  // 4. Vista de la App Principal (Boxes / Timing)
   return html`
     <div class="h-full w-full flex flex-col justify-between bg-black overflow-hidden select-none">
       
@@ -1085,9 +1139,11 @@ function App() {
         trackName=${liveData.session.trackName} 
         onTrackClick=${() => setShowTrackModal(true)} 
         onLogout=${handleLogout}
+        onAccessClick=${() => setShowAccessModal(true)}
+        userRole=${currentUser.role}
       />
 
-      <!-- Segmented Control de Pestañas (Boxes / Live Timing / Acceso) -->
+      <!-- Segmented Control de Pestañas (Solo "Boxes" y "Live Timing", la gestión de acceso ahora es un modal) -->
       <div class="px-3 py-1.5 bg-[#0E0E10] border-b border-[#111111]/80 flex space-x-1.5 flex-shrink-0">
         <button 
           type="button"
@@ -1105,16 +1161,6 @@ function App() {
         >
           Tiempos en Vivo
         </button>
-        ${currentUser && currentUser.role === 'admin' && html`
-          <button 
-            type="button"
-            onClick=${() => setActiveTab('acceso')}
-            class="flex-1 py-1 text-center text-[10px] font-bold rounded-md transition-all active:scale-[0.98]
-              ${activeTab === 'acceso' ? 'bg-[#B026FF] text-white shadow-sm' : 'bg-[#000000] text-gray-500 border border-gray-900/50 hover:text-gray-300'}"
-          >
-            Acceso
-          </button>
-        `}
       </div>
       
       <!-- Contenedor Principal Adaptativo -->
@@ -1130,22 +1176,26 @@ function App() {
                 onUpdateLayout=${handleUpdateLayout}
               />
             `
-          : activeTab === 'timing'
-            ? html`
-                <div class="flex-1 w-full h-full bg-black relative">
-                  <iframe 
-                    src="${activeTimingUrl}" 
-                    class="w-full h-full border-0 bg-black" 
-                    allow="fullscreen"
-                    title="Live Timing"
-                  ></iframe>
-                </div>
-              `
-            : html`
-                <${AccessControl} currentUser=${currentUser} />
-              `
+          : html`
+              <div class="flex-1 w-full h-full bg-black relative">
+                <iframe 
+                  src="${activeTimingUrl}" 
+                  class="w-full h-full border-0 bg-black" 
+                  allow="fullscreen"
+                  title="Live Timing"
+                ></iframe>
+              </div>
+            `
         }
       </main>
+
+      <!-- MODAL CONTROL DE ACCESOS (Abre con el botón "Acceso" en el Header) -->
+      ${showAccessModal && html`
+        <${AccessControlModal} 
+          currentUser=${currentUser} 
+          onClose=${() => setShowAccessModal(false)} 
+        />
+      `}
 
       <!-- MODAL SELECTOR DE CIRCUITO -->
       ${showTrackModal && html`
@@ -1178,7 +1228,7 @@ function App() {
             </div>
             
             <button 
-              type="button" 
+              type="border" 
               onClick=${() => setShowTrackModal(false)}
               class="w-full py-2.5 border border-gray-800 text-gray-500 text-xs font-bold rounded-lg hover:text-white"
             >
