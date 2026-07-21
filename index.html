@@ -77,16 +77,37 @@
 <body class="h-full w-full font-sans antialiased text-gray-200">
   <div id="root" class="h-full w-full flex flex-col"></div>
   
-  <!-- Main Script: Cargado como script normal para soporte file:// nativo -->
-  <script src="app.js"></script>
-
-  <!-- Service Worker Registration -->
+  <!-- Main Script con parámetro cache-bust para obligar al navegador a recargar el archivo limpio -->
   <script>
-    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then(reg => console.log('Service Worker registrado con éxito:', reg.scope))
-          .catch(err => console.error('Error al registrar Service Worker:', err));
+    document.write('<script src="app.js?v=' + Date.now() + '"><\/script>');
+  </script>
+
+  <!-- Script Limpiador de Caché y Service Workers (Resuelve de forma automática el bloqueo de pantalla) -->
+  <script>
+    // Eliminar cualquier caché local guardada por el Service Worker de versiones anteriores
+    if (window.caches) {
+      caches.keys().then(function(names) {
+        for (let name of names) {
+          caches.delete(name);
+        }
+      });
+    }
+
+    // Desregistrar activamente todos los Service Workers para evitar carga de archivos viejos
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        let updateNeeded = false;
+        for (let registration of registrations) {
+          registration.unregister();
+          updateNeeded = true;
+        }
+        // Si había un service worker activo, recargamos la página limpiamente por única vez
+        if (updateNeeded) {
+          console.log('PITGUIDE: Service Worker desregistrado para limpiar la caché. Forzando recarga...');
+          setTimeout(function() {
+            window.location.reload(true);
+          }, 100);
+        }
       });
     }
   </script>
