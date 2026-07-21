@@ -19,7 +19,7 @@ const TIER_RANGES = {
   'Lento': { min: 50000, max: 54000 }
 };
 
-// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con idioma español)
+// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con encolamiento automático)
 class ApexService {
   constructor() {
     this.subscribers = new Set();
@@ -44,6 +44,9 @@ class ApexService {
     // Cantidad inicial de filas (Lanes) y karts por fila
     this.numLanes = 2;
     this.numSlots = 4;
+    
+    // Contador de enumeración automática para nuevos karts
+    this.nextKartNumber = 9; // Empezamos en 9 ya que del 1 al 8 representan pilotos precargados
 
     this.pitLanes = {
       L1: [
@@ -53,10 +56,10 @@ class ApexService {
         { kart: "4", tier: "Rápido" }
       ],
       L2: [
-        { kart: "1", tier: "Medio" },
-        { kart: "2", tier: "Lento" },
-        { kart: "3", tier: "Medio" },
-        { kart: "4", tier: "Medio" }
+        { kart: "5", tier: "Medio" },
+        { kart: "6", tier: "Lento" },
+        { kart: "7", tier: "Medio" },
+        { kart: "8", tier: "Medio" }
       ]
     };
 
@@ -104,6 +107,23 @@ class ApexService {
     this.emit();
   }
 
+  // Agrega un kart en el ÚLTIMO LUGAR (entrada, índice numSlots - 1) desplazando el resto un puesto adelante
+  pushKartToLane(lane, tier) {
+    const laneData = this.pitLanes[lane];
+    
+    // El kart que estaba primero en el carril (índice 0, salida) sale del carril
+    // Desplazamos todos los karts una posición hacia adelante (hacia la salida, índice 0)
+    for (let i = 0; i < this.numSlots - 1; i++) {
+      laneData[i] = laneData[i + 1];
+    }
+    
+    // Creamos y asignamos el nuevo kart en el último lugar (entrada, índice numSlots - 1)
+    const kartNumber = String(this.nextKartNumber++);
+    laneData[this.numSlots - 1] = { kart: kartNumber, tier: tier };
+    
+    this.emit();
+  }
+
   updateKartTier(kartNumber, newTier) {
     const driver = this.drivers.find(d => d.kart === kartNumber);
     if (driver) driver.tier = newTier;
@@ -117,76 +137,12 @@ class ApexService {
     this.emit();
   }
 
-  addKartToPitLane(lane, kartNumber, tier, slot = null) {
-    this.removeKartFromPitLane(kartNumber);
-    
-    const newKart = { kart: kartNumber, tier: tier };
-    if (slot !== null && slot >= 0 && slot < this.numSlots) {
-      this.pitLanes[lane][slot] = newKart;
-    } else {
-      this.pitLanes[lane].push(newKart);
-      if (this.pitLanes[lane].length > this.numSlots) {
-        this.pitLanes[lane].shift();
-      }
-    }
-    
-    const driver = this.drivers.find(d => d.kart === kartNumber);
-    if (driver) {
-      driver.status = "PIT";
-      driver.speed = 0;
-    }
-    this.emit();
-  }
-
   removeKartFromPitLane(kartNumber) {
     for (let lane of Object.keys(this.pitLanes)) {
       const idx = this.pitLanes[lane].findIndex(k => k && k.kart === kartNumber);
       if (idx !== -1) {
         this.pitLanes[lane][idx] = null;
       }
-    }
-    this.emit();
-  }
-
-  releaseKartToTrack(kartNumber, driverName) {
-    let tier = "Medio";
-    for (let lane of Object.keys(this.pitLanes)) {
-      const kartObj = this.pitLanes[lane].find(k => k && k.kart === kartNumber);
-      if (kartObj) {
-        tier = kartObj.tier;
-        break;
-      }
-    }
-    
-    this.removeKartFromPitLane(kartNumber);
-    
-    let driver = this.drivers.find(d => d.kart === kartNumber);
-    if (driver) {
-      driver.status = "TRACK";
-      driver.currentLapStart = Date.now();
-      driver.sector = 1;
-      driver.s1 = 0;
-      driver.s2 = 0;
-      driver.s3 = 0;
-    } else {
-      const id = String(this.drivers.length + 1);
-      this.drivers.push({
-        id,
-        name: driverName,
-        kart: kartNumber,
-        tier: tier,
-        bestLap: 0,
-        lastLap: 0,
-        currentLapNum: 1,
-        sector: 1,
-        s1: 0,
-        s2: 0,
-        s3: 0,
-        currentLapStart: Date.now(),
-        speed: 40,
-        gap: 0,
-        status: "TRACK"
-      });
     }
     this.emit();
   }
@@ -263,14 +219,12 @@ function Navigation() {
   `;
 }
 
-// 5. Componente PitLanes (Pistas simplificadas: Sin carril switcher, sin auto/elegir, colores actualizados)
+// 5. Componente PitLanes (Encolamiento automático al agregar y edición simplificada)
 function PitLanes({ data }) {
   const { pitLanes, numLanes, numSlots } = data;
   const [selectedKart, setSelectedKart] = useState(null);
-  const [newKartNum, setNewKartNum] = useState("");
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [addModeLane, setAddModeLane] = useState("L1");
-  const [addModeSlot, setAddModeSlot] = useState(0);
+  const [showLaneModal, setShowLaneModal] = useState(false);
+  const [modalTier, setModalTier] = useState("Rápido");
 
   const tierColors = {
     'Rápido': {
@@ -287,6 +241,7 @@ function PitLanes({ data }) {
     }
   };
 
+  // Manejar el clic en un kart para seleccionarlo y poder editarlo
   const handleSlotClick = (lane, slotIndex, kartObj) => {
     if (kartObj) {
       setSelectedKart({
@@ -295,42 +250,27 @@ function PitLanes({ data }) {
         kartNumber: kartObj.kart,
         tier: kartObj.tier
       });
-    } else {
-      setAddModeLane(lane);
-      setAddModeSlot(slotIndex);
-      setNewKartNum("");
-      setShowAddModal(true);
     }
   };
 
-  const handleAddKartSubmit = (e) => {
-    e.preventDefault();
-    if (!newKartNum.trim()) return;
-    
-    const defaultTier = selectedKart ? selectedKart.tier : "Medio";
-    apexService.addKartToPitLane(addModeLane, newKartNum.trim(), defaultTier, addModeSlot);
-    
-    setSelectedKart({
-      lane: addModeLane,
-      slotIndex: addModeSlot,
-      kartNumber: newKartNum.trim(),
-      tier: defaultTier
-    });
-    
-    setShowAddModal(false);
-  };
-
+  // Modifica el tier de un kart existente seleccionado
   const handleTierChange = (newTier) => {
     if (!selectedKart) return;
     apexService.updateKartTier(selectedKart.kartNumber, newTier);
     setSelectedKart(prev => ({ ...prev, tier: newTier }));
   };
 
-  const handleManualExit = () => {
-    if (!selectedKart) return;
-    const driverName = prompt("Nombre del piloto (opcional):", `Piloto Kart ${selectedKart.kartNumber}`) || `Piloto ${selectedKart.kartNumber}`;
-    apexService.releaseKartToTrack(selectedKart.kartNumber, driverName);
-    setSelectedKart(null);
+  // Disparador al pulsar los botones para agregar un kart nuevo de cierto rendimiento
+  const handleAddButtonClick = (tier) => {
+    setModalTier(tier);
+    setShowLaneModal(true);
+  };
+
+  // Ejecuta la inserción del nuevo kart en el último lugar del carril seleccionado
+  const selectLaneForAdd = (laneKey) => {
+    apexService.pushKartToLane(laneKey, modalTier);
+    setShowLaneModal(false);
+    setSelectedKart(null); // Limpiar selección al agregar
   };
 
   const adjustLanes = (delta) => {
@@ -356,7 +296,7 @@ function PitLanes({ data }) {
           <h2 class="text-lg font-extrabold text-white tracking-tight">CARRIL DE BOXES</h2>
         </div>
         
-        <!-- Legend (Español y Colores Actualizados) -->
+        <!-- Legend -->
         <div class="flex items-center space-x-3 text-[10px] font-bold tracking-wider uppercase text-[#888]">
           <div class="flex items-center space-x-1">
             <span class="w-2.5 h-2.5 rounded-full bg-[#39FF14] inline-block"></span>
@@ -460,13 +400,9 @@ function PitLanes({ data }) {
                     `;
                   } else {
                     return html`
-                      <button 
-                        type="button"
-                        onClick=${() => handleSlotClick(laneKey, slotIdx, null)}
-                        class="w-10 h-10 rounded-full border border-dashed border-gray-800 flex items-center justify-center text-gray-600 text-xs hover:border-gray-500 hover:text-gray-400 transition-all z-10"
-                      >
-                        +
-                      </button>
+                      <div class="w-10 h-10 rounded-full border border-dashed border-gray-800/30 flex items-center justify-center text-gray-800 text-[10px] select-none">
+                        -
+                      </div>
                     `;
                   }
                 })}
@@ -477,115 +413,124 @@ function PitLanes({ data }) {
         })}
       </div>
 
-      <!-- ESPACIADOR PARA DAR ESTRUCTURA LIMPIA AL REMOVER BOTONES AUTO/ELEGIR -->
-      <div class="h-4 flex-shrink-0"></div>
-
-      <!-- RENDIMIENTO KART (Verde / Naranja / Rojo) -->
-      <div class="mb-4 flex-shrink-0">
-        <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">RENDIMIENTO KART</span>
+      <!-- PANEL: AGREGAR NUEVO KART (Siempre activo, enumeración automática al elegir fila) -->
+      <div class="mb-4 mt-4 flex-shrink-0">
+        <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">AGREGAR NUEVO KART</span>
         <div class="grid grid-cols-3 gap-2">
           <button 
             type="button"
-            disabled=${!selectedKart}
-            onClick=${() => handleTierChange('Rápido')}
-            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border text-xs font-bold transition-all
-              ${!selectedKart ? 'opacity-40 border-[#111] bg-black text-[#444]' : 
-                selectedKart.tier === 'Rápido' ? 'border-[#39FF14] bg-[#39FF14]/10 text-[#39FF14]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
+            onClick=${() => handleAddButtonClick('Rápido')}
+            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#39FF14]/30 bg-[#39FF14]/5 text-[#39FF14] hover:bg-[#39FF14]/15 text-xs font-bold transition-all active:scale-[0.98]"
           >
-            <span class="w-2 h-2 rounded-full bg-[#39FF14]"></span>
-            <span>Rápido</span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#39FF14]"></span>
+            <span>+ Rápido</span>
           </button>
           
           <button 
             type="button"
-            disabled=${!selectedKart}
-            onClick=${() => handleTierChange('Medio')}
-            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border text-xs font-bold transition-all
-              ${!selectedKart ? 'opacity-40 border-[#111] bg-black text-[#444]' : 
-                selectedKart.tier === 'Medio' ? 'border-[#FF8C00] bg-[#FF8C00]/10 text-[#FF8C00]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
+            onClick=${() => handleAddButtonClick('Medio')}
+            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF8C00]/30 bg-[#FF8C00]/5 text-[#FF8C00] hover:bg-[#FF8C00]/15 text-xs font-bold transition-all active:scale-[0.98]"
           >
-            <span class="w-2 h-2 rounded-full bg-[#FF8C00]"></span>
-            <span>Medio</span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#FF8C00]"></span>
+            <span>+ Medio</span>
           </button>
           
           <button 
             type="button"
-            disabled=${!selectedKart}
-            onClick=${() => handleTierChange('Lento')}
-            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border text-xs font-bold transition-all
-              ${!selectedKart ? 'opacity-40 border-[#111] bg-black text-[#444]' : 
-                selectedKart.tier === 'Lento' ? 'border-[#FF3131] bg-[#FF3131]/10 text-[#FF3131]' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
+            onClick=${() => handleAddButtonClick('Lento')}
+            class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF3131]/30 bg-[#FF3131]/5 text-[#FF3131] hover:bg-[#FF3131]/15 text-xs font-bold transition-all active:scale-[0.98]"
           >
-            <span class="w-2 h-2 rounded-full bg-[#FF3131]"></span>
-            <span>Lento</span>
+            <span class="w-2.5 h-2.5 rounded-full bg-[#FF3131]"></span>
+            <span>+ Lento</span>
           </button>
         </div>
       </div>
 
-      <!-- BOTTOM ACTION (Salida manual a Pista) -->
-      <div class="flex items-center space-x-2 flex-shrink-0">
-        <button 
-          type="button"
-          disabled=${!selectedKart}
-          onClick=${handleManualExit}
-          class="flex-1 flex items-center justify-center space-x-2 py-3.5 rounded-lg border font-bold text-sm tracking-wide transition-all duration-150
-            ${!selectedKart ? 'border-[#1A1A22] bg-[#0A0A0C] text-gray-700' : 
-              'border-[#FF3131]/30 bg-red-950/20 text-[#FF3131] hover:bg-red-950/40 shadow-[0_0_15px_rgba(255,49,49,0.1)] active:scale-[0.98]'}"
-        >
-          <span>🏎️</span>
-          <span>Salida a Pista (Manual)</span>
-        </button>
-        ${selectedKart && html`
+      <!-- PANEL DE KART SELECCIONADO (Solo visible al hacer clic en un kart de la fila) -->
+      ${selectedKart ? html`
+        <div class="bg-[#0E0E10] border border-gray-900 rounded-xl p-3.5 flex flex-col space-y-2.5 mb-2 flex-shrink-0 animate-fade-in">
+          <div class="flex items-center justify-between">
+            <span class="text-[9px] uppercase tracking-wider text-gray-500 font-extrabold">EDITAR KART #${selectedKart.kartNumber}</span>
+            <button 
+              type="button"
+              onClick=${() => setSelectedKart(null)}
+              class="text-[10px] font-bold text-gray-500 hover:text-white"
+            >
+              Cancelar
+            </button>
+          </div>
+          
+          <div class="grid grid-cols-3 gap-2">
+            <button 
+              type="button"
+              onClick=${() => handleTierChange('Rápido')}
+              class="py-2.5 rounded-lg border text-xs font-bold transition-all
+                ${selectedKart.tier === 'Rápido' ? 'border-[#39FF14] bg-[#39FF14]/15 text-[#39FF14]' : 'border-[#1A1A22] bg-[#000000] text-gray-500'}"
+            >
+              Rápido
+            </button>
+            <button 
+              type="button"
+              onClick=${() => handleTierChange('Medio')}
+              class="py-2.5 rounded-lg border text-xs font-bold transition-all
+                ${selectedKart.tier === 'Medio' ? 'border-[#FF8C00] bg-[#FF8C00]/15 text-[#FF8C00]' : 'border-[#1A1A22] bg-[#000000] text-gray-500'}"
+            >
+              Medio
+            </button>
+            <button 
+              type="button"
+              onClick=${() => handleTierChange('Lento')}
+              class="py-2.5 rounded-lg border text-xs font-bold transition-all
+                ${selectedKart.tier === 'Lento' ? 'border-[#FF3131] bg-[#FF3131]/15 text-[#FF3131]' : 'border-[#1A1A22] bg-[#000000] text-gray-500'}"
+            >
+              Lento
+            </button>
+          </div>
+
           <button 
             type="button"
             onClick=${() => {
               apexService.removeKartFromPitLane(selectedKart.kartNumber);
               setSelectedKart(null);
             }}
-            class="px-4 py-3.5 rounded-lg border border-gray-800 bg-[#0E0E10] text-gray-400 hover:text-white"
+            class="w-full py-2.5 bg-red-950/20 hover:bg-red-950/40 text-neonRed border border-neonRed/30 rounded-lg text-xs font-bold transition-all active:scale-[0.98]"
           >
-            🗑️
+            🗑️ Eliminar Kart de la Fila
           </button>
-        `}
-      </div>
+        </div>
+      ` : html`
+        <div class="h-[122px] flex items-center justify-center border border-dashed border-gray-900/50 rounded-xl text-gray-700 text-xs font-bold flex-shrink-0 select-none">
+          Haz clic en un kart para editar su velocidad o eliminarlo
+        </div>
+      `}
 
-      <!-- MODAL PARA AGREGAR KART -->
-      ${showAddModal && html`
+      <!-- MODAL SELECTOR DE FILA (Abre al presionar + Rápido/Medio/Lento) -->
+      ${showLaneModal && html`
         <div class="fixed inset-0 bg-black/85 flex items-center justify-center p-6 z-50 backdrop-blur-sm">
-          <form onSubmit=${handleAddKartSubmit} class="w-full max-w-xs bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl">
-            <h3 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-4">Agregar Kart a ${addModeLane}</h3>
+          <div class="w-full max-w-xs bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-1 text-center">Seleccionar Fila</h3>
+            <p class="text-[10px] text-gray-600 mb-4 text-center">¿En qué fila deseas encolar el Kart?</p>
             
-            <div class="mb-4">
-              <label class="block text-xs font-semibold text-gray-500 mb-1">NÚMERO DE KART</label>
-              <input 
-                type="number" 
-                pattern="[0-9]*"
-                inputmode="numeric"
-                required
-                value=${newKartNum}
-                onInput=${(e) => setNewKartNum(e.target.value)}
-                class="w-full bg-black border border-gray-800 rounded-lg p-3 text-center text-2xl font-extrabold text-white focus:outline-none focus:border-green-500"
-                placeholder="0"
-                autoFocus
-              />
+            <div class="grid grid-cols-2 gap-2 mb-4">
+              ${Object.keys(pitLanes).map(laneKey => html`
+                <button 
+                  type="button" 
+                  onClick=${() => selectLaneForAdd(laneKey)}
+                  class="py-3 bg-black border border-gray-800 rounded-lg hover:border-neonGreen hover:text-neonGreen text-sm font-extrabold text-white transition-all active:scale-[0.96]"
+                >
+                  ${laneKey}
+                </button>
+              `)}
             </div>
             
-            <div class="flex space-x-2">
-              <button 
-                type="button" 
-                onClick=${() => setShowAddModal(false)}
-                class="flex-1 py-2.5 border border-gray-800 text-gray-400 text-xs font-bold rounded-lg"
-              >
-                Cancelar
-              </button>
-              <button 
-                type="submit"
-                class="flex-1 py-2.5 bg-green-500 text-black text-xs font-extrabold rounded-lg"
-              >
-                Agregar
-              </button>
-            </div>
-          </form>
+            <button 
+              type="button" 
+              onClick=${() => setShowLaneModal(false)}
+              class="w-full py-2.5 border border-gray-800 text-gray-500 text-xs font-bold rounded-lg hover:text-white"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       `}
 
