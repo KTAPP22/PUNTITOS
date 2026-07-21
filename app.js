@@ -254,48 +254,16 @@ class ApexService {
 
 const apexService = new ApexService();
 
-// 4. Componente Navigation (Totalmente en español)
-function Navigation({ sessionData }) {
-  const formatSeconds = (sec) => {
-    const mins = Math.floor(sec / 60);
-    const secs = sec % 60;
-    return `${mins}:${String(secs).padStart(2, '0')}`;
-  };
-
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'GREEN':
-        return html`<span class="px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 text-[9px] font-extrabold animate-pulse">EN VIVO</span>`;
-      case 'YELLOW':
-        return html`<span class="px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-[9px] font-extrabold">BANDERA AMARILLA</span>`;
-      case 'RED':
-        return html`<span class="px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 text-[9px] font-extrabold">SESIÓN DETENIDA</span>`;
-      case 'CHECKERED':
-        return html`<span class="px-1.5 py-0.5 rounded bg-white/10 text-white border border-white/20 text-[9px] font-extrabold">FINALIZADO</span>`;
-      default:
-        return null;
-    }
-  };
-
+// 4. Componente Navigation (Cabecera simplificada a petición: Solo muestra el logo PITGUIDE)
+function Navigation() {
   return html`
-    <header class="bg-[#000000] border-b border-[#111111] px-4 py-3 flex items-center justify-between flex-shrink-0 safe-top">
-      <div class="flex items-center space-x-2">
-        <span class="text-neonYellow font-extrabold text-base tracking-tighter">PITGUIDE</span>
-        <span class="text-[9px] font-bold text-gray-500 tracking-wider bg-[#0E0E10] border border-gray-800 rounded px-1.5 py-0.5">${sessionData.trackName}</span>
-      </div>
-      
-      <div class="flex items-center space-x-3">
-        <div class="text-right">
-          <span class="text-[8px] font-bold text-gray-500 block uppercase">Tiempo</span>
-          <span class="text-sm font-bold font-mono text-white tracking-tight mono-num">${formatSeconds(sessionData.timeRemaining)}</span>
-        </div>
-        ${getStatusBadge(sessionData.status)}
-      </div>
+    <header class="bg-[#000000] border-b border-[#111111] px-4 py-4 flex items-center justify-start flex-shrink-0 safe-top">
+      <span class="text-neonYellow font-extrabold text-lg tracking-tighter">PITGUIDE</span>
     </header>
   `;
 }
 
-// 5. Componente PitLanes (Españolizado y con colores Verde/Naranja/Rojo)
+// 5. Componente PitLanes (Pistas simplificadas: Sin carril switcher, sin auto/elegir, colores actualizados)
 function PitLanes({ data }) {
   const { pitLanes, numLanes, numSlots } = data;
   const [selectedKart, setSelectedKart] = useState(null);
@@ -304,7 +272,6 @@ function PitLanes({ data }) {
   const [addModeLane, setAddModeLane] = useState("L1");
   const [addModeSlot, setAddModeSlot] = useState(0);
 
-  // Paleta de colores solicitada: Rápido = Verde, Medio = Naranja, Lento = Rojo
   const tierColors = {
     'Rápido': {
       bg: 'bg-[#39FF14] shadow-[0_0_12px_rgba(57,255,20,0.4)]',
@@ -364,26 +331,6 @@ function PitLanes({ data }) {
     const driverName = prompt("Nombre del piloto (opcional):", `Piloto Kart ${selectedKart.kartNumber}`) || `Piloto ${selectedKart.kartNumber}`;
     apexService.releaseKartToTrack(selectedKart.kartNumber, driverName);
     setSelectedKart(null);
-  };
-
-  const moveSelectedToLane = (lane) => {
-    if (!selectedKart) return;
-    const currentKart = selectedKart.kartNumber;
-    const currentTier = selectedKart.tier;
-    
-    let emptySlotIdx = pitLanes[lane].findIndex(slot => slot === null);
-    if (emptySlotIdx === -1) emptySlotIdx = null;
-    
-    apexService.addKartToPitLane(lane, currentKart, currentTier, emptySlotIdx);
-    
-    const newLaneData = apexService.pitLanes[lane];
-    const newIdx = newLaneData.findIndex(k => k && k.kart === currentKart);
-    setSelectedKart({
-      lane,
-      slotIndex: newIdx !== -1 ? newIdx : 0,
-      kartNumber: currentKart,
-      tier: currentTier
-    });
   };
 
   const adjustLanes = (delta) => {
@@ -530,17 +477,8 @@ function PitLanes({ data }) {
         })}
       </div>
 
-      <!-- AUTO / SELECCIONAR TOGGLE -->
-      <div class="grid grid-cols-2 gap-2 mb-3 mt-4 flex-shrink-0">
-        <button type="button" class="flex items-center justify-center space-x-1 py-2 rounded bg-green-950/40 border border-green-800/60 text-green-400 text-xs font-bold shadow-sm">
-          <span>⚡</span>
-          <span>Auto</span>
-        </button>
-        <button type="button" class="flex items-center justify-center space-x-1 py-2 rounded bg-[#0E0E10] border border-gray-800 text-gray-400 text-xs font-bold">
-          <span>👇</span>
-          <span>Elegir</span>
-        </button>
-      </div>
+      <!-- ESPACIADOR PARA DAR ESTRUCTURA LIMPIA AL REMOVER BOTONES AUTO/ELEGIR -->
+      <div class="h-4 flex-shrink-0"></div>
 
       <!-- RENDIMIENTO KART (Verde / Naranja / Rojo) -->
       <div class="mb-4 flex-shrink-0">
@@ -581,25 +519,6 @@ function PitLanes({ data }) {
             <span class="w-2 h-2 rounded-full bg-[#FF3131]"></span>
             <span>Lento</span>
           </button>
-        </div>
-      </div>
-
-      <!-- CAMBIAR CARRIL -->
-      <div class="mb-4 flex-shrink-0">
-        <span class="text-[9px] uppercase tracking-wider text-[#555] font-extrabold block mb-1">CAMBIAR CARRIL</span>
-        <div class="flex flex-wrap gap-2">
-          ${Object.keys(pitLanes).map(laneKey => html`
-            <button 
-              type="button"
-              disabled=${!selectedKart}
-              onClick=${() => moveSelectedToLane(laneKey)}
-              class="flex-1 min-w-[60px] py-2.5 rounded-lg border text-xs font-bold transition-all
-                ${!selectedKart ? 'opacity-40 border-[#111] bg-black text-[#444]' : 
-                  selectedKart.lane === laneKey ? 'border-white bg-[#1A1A22] text-white' : 'border-[#1A1A22] bg-[#0E0E10] text-[#888]'}"
-            >
-              ${laneKey}
-            </button>
-          `)}
         </div>
       </div>
 
@@ -693,7 +612,7 @@ function App() {
 
   return html`
     <div class="h-full w-full flex flex-col justify-between bg-black overflow-hidden select-none">
-      <${Navigation} sessionData=${liveData.session} />
+      <${Navigation} />
       <main class="flex-1 overflow-hidden flex flex-col bg-black relative">
         <${PitLanes} data=${liveData} />
       </main>
