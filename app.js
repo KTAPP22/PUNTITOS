@@ -19,14 +19,14 @@ const TIER_RANGES = {
   'Lento': { min: 50000, max: 54000 }
 };
 
-// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos persistidos en LocalStorage)
+// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con encolamiento y persistencia)
 class ApexService {
   constructor() {
     this.subscribers = new Set();
     this.session = {
       id: "session-2026-07-21",
-      trackName: "Henakart Live",
-      trackLength: "1,120m",
+      trackName: localStorage.getItem('pitguide_trackName') || "Lucas Guerrero", // Persistencia del circuito
+      trackLength: "1,428m",
       sessionType: "Prácticas Libres",
       timeRemaining: 900,
       weather: "SECO",
@@ -85,6 +85,13 @@ class ApexService {
     localStorage.setItem('pitguide_lanes', String(this.numLanes));
     localStorage.setItem('pitguide_slots', String(this.numSlots));
     localStorage.setItem('pitguide_pitLanes', JSON.stringify(this.pitLanes));
+  }
+
+  // Modifica el circuito seleccionado y lo guarda en LocalStorage
+  setTrackName(name) {
+    this.session.trackName = name;
+    localStorage.setItem('pitguide_trackName', name);
+    this.emit();
   }
 
   subscribe(callback) {
@@ -225,21 +232,26 @@ class ApexService {
 
 const apexService = new ApexService();
 
-// 4. Componente Navigation (Cabecera simplificada a petición: Solo muestra el logo PITGUIDE)
-function Navigation() {
+// 4. Componente Navigation (Cabecera con logo morado y selector de circuito interactivo en la derecha)
+function Navigation({ trackName, onTrackClick }) {
   return html`
-    <header class="bg-[#000000] border-b border-[#111111] px-4 py-4 flex items-center justify-start flex-shrink-0 safe-top">
+    <header class="bg-[#000000] border-b border-[#111111] px-4 py-3 flex items-center justify-between flex-shrink-0 safe-top">
       <span class="text-[#B026FF] font-extrabold text-lg tracking-tighter">PITGUIDE</span>
+      <button 
+        type="button"
+        onClick=${onTrackClick}
+        class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-gray-800 bg-[#0E0E10] text-[11px] font-extrabold hover:border-gray-500 text-gray-300 transition-all duration-150 active:scale-[0.97]"
+      >
+        <span>🏁</span>
+        <span class="text-white">${trackName || 'Seleccionar Circuito'}</span>
+      </button>
     </header>
   `;
 }
 
 // 5. Componente PitLanes (Enumeración del 1 al total de karts en cada carril)
-function PitLanes({ data }) {
+function PitLanes({ data, onAddClick, selectedKart, setSelectedKart }) {
   const { pitLanes, numLanes, numSlots } = data;
-  const [selectedKart, setSelectedKart] = useState(null); // { lane, slotIndex, tier }
-  const [showLaneModal, setShowLaneModal] = useState(false);
-  const [modalTier, setModalTier] = useState("Rápido");
 
   const tierColors = {
     'Rápido': {
@@ -293,19 +305,6 @@ function PitLanes({ data }) {
     if (!selectedKart) return;
     apexService.updateKartTierAtSlot(selectedKart.lane, selectedKart.slotIndex, newTier);
     setSelectedKart(prev => ({ ...prev, tier: newTier }));
-  };
-
-  // Disparador al pulsar los botones para agregar un kart nuevo de cierto rendimiento
-  const handleAddButtonClick = (tier) => {
-    setModalTier(tier);
-    setShowLaneModal(true);
-  };
-
-  // Ejecuta la inserción del nuevo kart en el último lugar del carril seleccionado
-  const selectLaneForAdd = (laneKey) => {
-    apexService.pushKartToLane(laneKey, modalTier);
-    setShowLaneModal(false);
-    setSelectedKart(null); // Limpiar selección al agregar
   };
 
   const adjustLanes = (delta) => {
@@ -460,7 +459,7 @@ function PitLanes({ data }) {
         <div class="grid grid-cols-3 gap-2">
           <button 
             type="button"
-            onClick=${() => handleAddButtonClick('Rápido')}
+            onClick=${() => onAddClick('Rápido')}
             class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#39FF14]/30 bg-[#39FF14]/5 text-[#39FF14] hover:bg-[#39FF14]/15 text-xs font-bold transition-all active:scale-[0.98]"
           >
             <span class="w-2.5 h-2.5 rounded-full bg-[#39FF14]"></span>
@@ -469,7 +468,7 @@ function PitLanes({ data }) {
           
           <button 
             type="button"
-            onClick=${() => handleAddButtonClick('Medio')}
+            onClick=${() => onAddClick('Medio')}
             class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF8C00]/30 bg-[#FF8C00]/5 text-[#FF8C00] hover:bg-[#FF8C00]/15 text-xs font-bold transition-all active:scale-[0.98]"
           >
             <span class="w-2.5 h-2.5 rounded-full bg-[#FF8C00]"></span>
@@ -478,7 +477,7 @@ function PitLanes({ data }) {
           
           <button 
             type="button"
-            onClick=${() => handleAddButtonClick('Lento')}
+            onClick=${() => onAddClick('Lento')}
             class="flex items-center justify-center space-x-1.5 py-3 rounded-lg border border-[#FF3131]/30 bg-[#FF3131]/5 text-[#FF3131] hover:bg-[#FF3131]/15 text-xs font-bold transition-all active:scale-[0.98]"
           >
             <span class="w-2.5 h-2.5 rounded-full bg-[#FF3131]"></span>
@@ -547,7 +546,92 @@ function PitLanes({ data }) {
         </div>
       `}
 
-      <!-- MODAL SELECTOR DE FILA -->
+    </div>
+  `;
+}
+
+// 6. Componente App principal (Orquesta modales globales de Circuito y Carril)
+function App() {
+  const [liveData, setLiveData] = useState({
+    session: { trackName: 'Lucas Guerrero', timeRemaining: 0, status: 'GREEN' },
+    drivers: [],
+    pitLanes: { L1: [], L2: [] },
+    numLanes: 2,
+    numSlots: 4
+  });
+
+  const [selectedKart, setSelectedKart] = useState(null);
+  const [showTrackModal, setShowTrackModal] = useState(false);
+  const [showLaneModal, setShowLaneModal] = useState(false);
+  const [modalTier, setModalTier] = useState("Rápido");
+
+  useEffect(() => {
+    const unsubscribe = apexService.subscribe((newData) => {
+      setLiveData(newData);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleAddClick = (tier) => {
+    setModalTier(tier);
+    setShowLaneModal(true);
+  };
+
+  const selectLaneForAdd = (laneKey) => {
+    apexService.pushKartToLane(laneKey, modalTier);
+    setShowLaneModal(false);
+    setSelectedKart(null);
+  };
+
+  return html`
+    <div class="h-full w-full flex flex-col justify-between bg-black overflow-hidden select-none">
+      <${Navigation} 
+        trackName=${liveData.session.trackName} 
+        onTrackClick=${() => setShowTrackModal(true)} 
+      />
+      
+      <main class="flex-1 overflow-hidden flex flex-col bg-black relative">
+        <${PitLanes} 
+          data=${liveData} 
+          onAddClick=${handleAddClick} 
+          selectedKart=${selectedKart}
+          setSelectedKart=${setSelectedKart}
+        />
+      </main>
+
+      <!-- MODAL SELECTOR DE CIRCUITO (Sólo Lucas Guerrero) -->
+      ${showTrackModal && html`
+        <div class="fixed inset-0 bg-black/85 flex items-center justify-center p-6 z-50 backdrop-blur-sm">
+          <div class="w-full max-w-xs bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl">
+            <h3 class="text-sm font-bold uppercase tracking-wider text-gray-400 mb-1 text-center">Seleccionar Circuito</h3>
+            <p class="text-[10px] text-gray-600 mb-4 text-center">Elige el circuito de karting activo</p>
+            
+            <div class="space-y-2 mb-4">
+              <button 
+                type="button" 
+                onClick=${() => {
+                  apexService.setTrackName("Lucas Guerrero");
+                  setShowTrackModal(false);
+                }}
+                class="w-full py-3 bg-black border border-gray-800 rounded-lg hover:border-[#B026FF] hover:text-[#B026FF] text-xs font-extrabold text-white text-left px-4 flex items-center justify-between transition-all"
+              >
+                <span>Lucas Guerrero</span>
+                <span class="text-[10px] text-gray-500 font-normal">Chiva, Valencia</span>
+              </button>
+            </div>
+            
+            <button 
+              type="button" 
+              onClick=${() => setShowTrackModal(false)}
+              class="w-full py-2.5 border border-gray-800 text-gray-500 text-xs font-bold rounded-lg hover:text-white"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      `}
+
+      <!-- MODAL SELECTOR DE FILA (Para agregar Karts) -->
       ${showLaneModal && html`
         <div class="fixed inset-0 bg-black/85 flex items-center justify-center p-6 z-50 backdrop-blur-sm">
           <div class="w-full max-w-xs bg-[#0E0E10] border border-[#1a1a20] rounded-xl p-5 shadow-2xl">
@@ -555,7 +639,7 @@ function PitLanes({ data }) {
             <p class="text-[10px] text-gray-600 mb-4 text-center">¿En qué fila deseas encolar el Kart?</p>
             
             <div class="grid grid-cols-2 gap-2 mb-4">
-              ${Object.keys(pitLanes).map(laneKey => html`
+              ${Object.keys(liveData.pitLanes).map(laneKey => html`
                 <button 
                   type="button" 
                   onClick=${() => selectLaneForAdd(laneKey)}
@@ -576,34 +660,6 @@ function PitLanes({ data }) {
           </div>
         </div>
       `}
-
-    </div>
-  `;
-}
-
-// 6. Componente App principal
-function App() {
-  const [liveData, setLiveData] = useState({
-    session: { trackName: 'Cargando...', timeRemaining: 0, status: 'GREEN' },
-    drivers: [],
-    pitLanes: { L1: [], L2: [] },
-    numLanes: 2,
-    numSlots: 4
-  });
-
-  useEffect(() => {
-    const unsubscribe = apexService.subscribe((newData) => {
-      setLiveData(newData);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  return html`
-    <div class="h-full w-full flex flex-col justify-between bg-black overflow-hidden select-none">
-      <${Navigation} />
-      <main class="flex-1 overflow-hidden flex flex-col bg-black relative">
-        <${PitLanes} data=${liveData} />
-      </main>
     </div>
   `;
 }
