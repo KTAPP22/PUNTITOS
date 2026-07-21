@@ -19,7 +19,7 @@ const TIER_RANGES = {
   'Lento': { min: 50000, max: 54000 }
 };
 
-// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos con encolamiento y numeración automática)
+// 3. Servicio de Simulación Live Timing (Filas y slots dinámicos persistidos en LocalStorage)
 class ApexService {
   constructor() {
     this.subscribers = new Set();
@@ -41,12 +41,30 @@ class ApexService {
       { id: "5", name: "M. Verstappen (Sim)", kart: "8", tier: "Medio", bestLap: 47890, lastLap: 48100, currentLapNum: 7, sector: 2, s1: 16100, s2: 16200, s3: 0, currentLapStart: Date.now() - 20000, speed: 70, gap: 2680, status: "TRACK" }
     ];
 
-    this.numLanes = 2;
-    this.numSlots = 4;
+    // Cargar del LocalStorage o usar valores por defecto
+    const savedLanes = localStorage.getItem('pitguide_lanes');
+    const savedSlots = localStorage.getItem('pitguide_slots');
+    const savedPitLanes = localStorage.getItem('pitguide_pitLanes');
 
-    // Inicializamos los karts. No guardamos un número de kart estático, 
-    // se calculará dinámicamente según su orden en el carril.
-    this.pitLanes = {
+    this.numLanes = savedLanes ? parseInt(savedLanes, 10) : 2;
+    this.numSlots = savedSlots ? parseInt(savedSlots, 10) : 4;
+
+    if (savedPitLanes) {
+      try {
+        this.pitLanes = JSON.parse(savedPitLanes);
+      } catch (e) {
+        this.pitLanes = this.getDefaultPitLanes();
+      }
+    } else {
+      this.pitLanes = this.getDefaultPitLanes();
+    }
+
+    this.timerId = null;
+    this.startSimulation();
+  }
+
+  getDefaultPitLanes() {
+    return {
       L1: [
         { tier: "Rápido" },
         { tier: "Medio" },
@@ -60,9 +78,13 @@ class ApexService {
         { tier: "Medio" }
       ]
     };
+  }
 
-    this.timerId = null;
-    this.startSimulation();
+  // Guarda la configuración y estado actual en LocalStorage de forma persistente
+  saveToLocalStorage() {
+    localStorage.setItem('pitguide_lanes', String(this.numLanes));
+    localStorage.setItem('pitguide_slots', String(this.numSlots));
+    localStorage.setItem('pitguide_pitLanes', JSON.stringify(this.pitLanes));
   }
 
   subscribe(callback) {
@@ -102,6 +124,7 @@ class ApexService {
     }
     
     this.pitLanes = newPitLanes;
+    this.saveToLocalStorage();
     this.emit();
   }
 
@@ -117,6 +140,7 @@ class ApexService {
     // Insertamos el nuevo kart en el último lugar (entrada, índice numSlots - 1)
     laneData[this.numSlots - 1] = { tier: tier };
     
+    this.saveToLocalStorage();
     this.emit();
   }
 
@@ -124,6 +148,7 @@ class ApexService {
   updateKartTierAtSlot(lane, slotIndex, newTier) {
     if (this.pitLanes[lane] && this.pitLanes[lane][slotIndex]) {
       this.pitLanes[lane][slotIndex].tier = newTier;
+      this.saveToLocalStorage();
       this.emit();
     }
   }
@@ -132,6 +157,7 @@ class ApexService {
   removeKartAtSlot(lane, slotIndex) {
     if (this.pitLanes[lane]) {
       this.pitLanes[lane][slotIndex] = null;
+      this.saveToLocalStorage();
       this.emit();
     }
   }
@@ -231,7 +257,6 @@ function PitLanes({ data }) {
   };
 
   // Función para obtener el número de kart dinámico (de 1 al total de karts en la fila)
-  // Cuenta cuántos karts existen desde el inicio (salida, índice 0) hasta el slotIdx actual
   const getDynamicKartNumber = (laneKey, slotIdx) => {
     const laneData = pitLanes[laneKey];
     if (!laneData || laneData[slotIdx] === null) return 0;
@@ -398,7 +423,6 @@ function PitLanes({ data }) {
                   
                   if (kartObj) {
                     const styles = tierColors[kartObj.tier];
-                    // El número de kart se calcula dinámicamente (1 a totalKarts en la fila)
                     const displayNum = getDynamicKartNumber(laneKey, slotIdx);
                     
                     return html`
