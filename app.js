@@ -412,7 +412,7 @@ function Navigation({ trackName, onTrackClick, onLogout, onAccessClick, userRole
 // 6. Componente PitLanes
 function PitLanes({ data, onAddClick, selectedKart, setSelectedKart, userRole, onUpdateLayout }) {
   const { pitLanes, numLanes, numSlots } = data;
-  const isAdmin = userRole === 'admin';
+  const isAdmin = true; // Todos los usuarios registrados y activos tienen permisos de edición en boxes
 
   const tierColors = {
     'Rápido': {
