@@ -251,7 +251,7 @@ function Navigation({ trackName, onTrackClick }) {
       <button 
         type="button"
         onClick=${onTrackClick}
-        class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-gray-800 bg-[#0E0E10] text-[11px] font-extrabold hover:border-gray-500 text-gray-300 transition-all duration-150 active:scale-[0.97]"
+        class="flex items-center space-x-1 px-2.5 py-1 rounded-md border border-gray-800 bg-[#0E0E10] text-[9.5px] font-extrabold hover:border-gray-500 text-gray-300 transition-all duration-150 active:scale-[0.97]"
       >
         <span>🏁</span>
         <span class="text-white">${trackName || 'Seleccionar Circuito'}</span>
@@ -610,20 +610,20 @@ function App() {
       />
 
       <!-- Segmented Control de Pestañas (Boxes / Live Timing) -->
-      <div class="px-4 py-2 bg-[#0E0E10] border-b border-[#111111]/80 flex space-x-2 flex-shrink-0">
+      <div class="px-3 py-1.5 bg-[#0E0E10] border-b border-[#111111]/80 flex space-x-1.5 flex-shrink-0">
         <button 
           type="button"
           onClick=${() => setActiveTab('boxes')}
-          class="flex-1 py-2 text-center text-xs font-bold rounded-lg transition-all active:scale-[0.98]
-            ${activeTab === 'boxes' ? 'bg-[#B026FF] text-white shadow-md' : 'bg-[#000000] text-gray-500 border border-gray-900/50 hover:text-gray-300'}"
+          class="flex-1 py-1 text-center text-[10px] font-bold rounded-md transition-all active:scale-[0.98]
+            ${activeTab === 'boxes' ? 'bg-[#B026FF] text-white shadow-sm' : 'bg-[#000000] text-gray-500 border border-gray-900/50 hover:text-gray-300'}"
         >
           Carril de Boxes
         </button>
         <button 
           type="button"
           onClick=${() => setActiveTab('timing')}
-          class="flex-1 py-2 text-center text-xs font-bold rounded-lg transition-all active:scale-[0.98]
-            ${activeTab === 'timing' ? 'bg-[#B026FF] text-white shadow-md' : 'bg-[#000000] text-gray-500 border border-gray-900/50 hover:text-gray-300'}"
+          class="flex-1 py-1 text-center text-[10px] font-bold rounded-md transition-all active:scale-[0.98]
+            ${activeTab === 'timing' ? 'bg-[#B026FF] text-white shadow-sm' : 'bg-[#000000] text-gray-500 border border-gray-900/50 hover:text-gray-300'}"
         >
           Tiempos en Vivo
         </button>
